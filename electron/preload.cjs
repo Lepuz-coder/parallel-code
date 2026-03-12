@@ -22,6 +22,8 @@ const ALLOWED_CHANNELS = new Set([
   'get_changed_files_from_branch',
   'get_file_diff',
   'get_file_diff_from_branch',
+  'get_all_file_diffs',
+  'get_all_file_diffs_from_branch',
   'get_gitignored_dirs',
   'get_worktree_status',
   'commit_all',

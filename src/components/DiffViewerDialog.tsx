@@ -1,16 +1,16 @@
-import { Show, createSignal, createEffect } from 'solid-js';
+import { Show, createSignal, createEffect, onCleanup } from 'solid-js';
 import { Dialog } from './Dialog';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { theme } from '../lib/theme';
-import { isBinaryDiff } from '../lib/diff-parser';
-import { getStatusColor } from '../lib/status-colors';
-import { openFileInEditor } from '../lib/shell';
-import { MonacoDiffEditor } from './MonacoDiffEditor';
-import type { ChangedFile, FileDiffResult } from '../ipc/types';
+import { sf } from '../lib/fontScale';
+import { parseUnifiedDiff } from '../lib/unified-diff-parser';
+import { ScrollingDiffView } from './ScrollingDiffView';
+import type { FileDiff } from '../lib/unified-diff-parser';
 
 interface DiffViewerDialogProps {
-  file: ChangedFile | null;
+  /** Which file to auto-scroll to (the one the user clicked). Null = closed. */
+  scrollToFile: string | null;
   worktreePath: string;
   onClose: () => void;
   /** Project root for branch-based fallback when worktree doesn't exist */
@@ -19,113 +19,60 @@ interface DiffViewerDialogProps {
   branchName?: string | null;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  M: 'Modified',
-  A: 'Added',
-  D: 'Deleted',
-  '?': 'Untracked',
-};
-
-const EXT_TO_LANG: Record<string, string> = {
-  ts: 'typescript',
-  tsx: 'typescript',
-  js: 'javascript',
-  jsx: 'javascript',
-  rs: 'rust',
-  json: 'json',
-  css: 'css',
-  scss: 'scss',
-  less: 'less',
-  html: 'html',
-  xml: 'xml',
-  svg: 'xml',
-  md: 'markdown',
-  py: 'python',
-  rb: 'ruby',
-  go: 'go',
-  java: 'java',
-  kt: 'kotlin',
-  swift: 'swift',
-  sql: 'sql',
-  sh: 'shell',
-  bash: 'shell',
-  zsh: 'shell',
-  yaml: 'yaml',
-  yml: 'yaml',
-  toml: 'ini',
-  ini: 'ini',
-  dockerfile: 'dockerfile',
-  lua: 'lua',
-  cpp: 'cpp',
-  c: 'c',
-  h: 'c',
-  hpp: 'cpp',
-};
-
-function detectLang(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-  const basename = filePath.split('/').pop()?.toLowerCase() ?? '';
-  if (basename === 'dockerfile') return 'dockerfile';
-  if (basename === 'makefile') return 'makefile';
-  return EXT_TO_LANG[ext] ?? 'plaintext';
-}
-
 export function DiffViewerDialog(props: DiffViewerDialogProps) {
-  const [oldContent, setOldContent] = createSignal('');
-  const [newContent, setNewContent] = createSignal('');
+  const [parsedFiles, setParsedFiles] = createSignal<FileDiff[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal('');
-  const [binary, setBinary] = createSignal(false);
-  const [sideBySide, setSideBySide] = createSignal(true);
-  const [hasChanges, setHasChanges] = createSignal(true);
-  const [metadataOnly, setMetadataOnly] = createSignal(false);
+  const [searchQuery, setSearchQuery] = createSignal('');
 
   let fetchGeneration = 0;
+  let searchInputRef: HTMLInputElement | undefined;
+
+  // Ctrl+F / Cmd+F handler to focus the search input
+  createEffect(() => {
+    if (props.scrollToFile === null) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        searchInputRef?.focus();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    onCleanup(() => document.removeEventListener('keydown', handler));
+  });
 
   createEffect(() => {
-    const file = props.file;
-    if (!file) return;
+    const scrollTarget = props.scrollToFile;
+    if (!scrollTarget) return;
 
     const worktreePath = props.worktreePath;
     const projectRoot = props.projectRoot;
     const branchName = props.branchName;
     const thisGen = ++fetchGeneration;
 
+    setSearchQuery('');
     setLoading(true);
     setError('');
-    setBinary(false);
-    setOldContent('');
-    setNewContent('');
-    setHasChanges(true);
-    setMetadataOnly(false);
+    setParsedFiles([]);
 
     const worktreePromise = worktreePath
-      ? invoke<FileDiffResult>(IPC.GetFileDiff, { worktreePath, filePath: file.path })
+      ? invoke<string>(IPC.GetAllFileDiffs, { worktreePath })
       : Promise.reject(new Error('no worktree'));
 
     worktreePromise
       .catch((err: unknown) => {
         if (projectRoot && branchName) {
-          return invoke<FileDiffResult>(IPC.GetFileDiffFromBranch, {
+          return invoke<string>(IPC.GetAllFileDiffsFromBranch, {
             projectRoot,
             branchName,
-            filePath: file.path,
           });
         }
         const msg = err instanceof Error ? err.message : String(err);
-        throw new Error(`Could not load diff: ${msg}`);
+        throw new Error(`Could not load diffs: ${msg}`);
       })
-      .then((result) => {
+      .then((rawDiff) => {
         if (thisGen !== fetchGeneration) return;
-        if (isBinaryDiff(result.diff)) {
-          setBinary(true);
-        } else {
-          setOldContent(result.oldContent);
-          setNewContent(result.newContent);
-          const contentDiffers = result.oldContent !== result.newContent;
-          setHasChanges(result.diff !== '' || contentDiffers);
-          setMetadataOnly(result.diff !== '' && !contentDiffers);
-        }
+        setParsedFiles(parseUnifiedDiff(rawDiff));
       })
       .catch((err) => {
         if (thisGen !== fetchGeneration) return;
@@ -136,9 +83,42 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
       });
   });
 
+  const totalAdded = () =>
+    parsedFiles().reduce(
+      (sum, f) =>
+        sum + f.hunks.reduce((s, h) => s + h.lines.filter((l) => l.type === 'add').length, 0),
+      0,
+    );
+
+  const totalRemoved = () =>
+    parsedFiles().reduce(
+      (sum, f) =>
+        sum + f.hunks.reduce((s, h) => s + h.lines.filter((l) => l.type === 'remove').length, 0),
+      0,
+    );
+
+  const countMatches = () => {
+    const q = searchQuery().toLowerCase();
+    if (!q) return 0;
+    let count = 0;
+    for (const file of parsedFiles()) {
+      for (const hunk of file.hunks) {
+        for (const line of hunk.lines) {
+          let idx = 0;
+          const lower = line.content.toLowerCase();
+          while ((idx = lower.indexOf(q, idx)) !== -1) {
+            count++;
+            idx += q.length;
+          }
+        }
+      }
+    }
+    return count;
+  };
+
   return (
     <Dialog
-      open={props.file !== null}
+      open={props.scrollToFile !== null}
       onClose={props.onClose}
       width="90vw"
       panelStyle={{
@@ -149,177 +129,129 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
         gap: '0',
       }}
     >
-      <Show when={props.file}>
-        {(file) => (
-          <>
-            {/* Header */}
+      <Show when={props.scrollToFile !== null}>
+        {/* Header */}
+        <div
+          style={{
+            display: 'flex',
+            'align-items': 'center',
+            gap: '10px',
+            padding: '12px 20px',
+            'border-bottom': `1px solid ${theme.border}`,
+            'flex-shrink': '0',
+          }}
+        >
+          <span
+            style={{
+              'font-size': sf(13),
+              color: theme.fg,
+              'font-weight': '600',
+            }}
+          >
+            {parsedFiles().length} files changed
+          </span>
+          <span
+            style={{
+              'font-size': sf(12),
+              color: theme.success,
+              'font-family': "'JetBrains Mono', monospace",
+            }}
+          >
+            +{totalAdded()}
+          </span>
+          <span
+            style={{
+              'font-size': sf(12),
+              color: theme.error,
+              'font-family': "'JetBrains Mono', monospace",
+            }}
+          >
+            -{totalRemoved()}
+          </span>
+
+          <span style={{ flex: '1' }} />
+
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="Search..."
+            value={searchQuery()}
+            onInput={(e) => setSearchQuery(e.currentTarget.value)}
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: `1px solid ${theme.borderSubtle}`,
+              'border-radius': '4px',
+              color: theme.fg,
+              'font-size': sf(12),
+              'font-family': "'JetBrains Mono', monospace",
+              padding: '3px 8px',
+              width: '200px',
+              outline: 'none',
+            }}
+          />
+          <Show when={searchQuery().length > 0}>
+            <span style={{ 'font-size': sf(11), color: theme.fgSubtle, 'white-space': 'nowrap' }}>
+              {countMatches()} matches
+            </span>
+          </Show>
+
+          <button
+            onClick={() => props.onClose()}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: theme.fgMuted,
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              'align-items': 'center',
+              'border-radius': '4px',
+            }}
+            title="Close"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: '1', overflow: 'hidden' }}>
+          <Show when={loading()}>
             <div
               style={{
-                display: 'flex',
-                'align-items': 'center',
-                gap: '10px',
-                padding: '16px 20px',
-                'border-bottom': `1px solid ${theme.border}`,
-                'flex-shrink': '0',
+                padding: '40px',
+                'text-align': 'center',
+                color: theme.fgMuted,
+                'font-size': sf(13),
               }}
             >
-              <span
-                style={{
-                  'font-size': '11px',
-                  'font-weight': '600',
-                  padding: '2px 8px',
-                  'border-radius': '4px',
-                  color: getStatusColor(file().status),
-                  background: 'rgba(255,255,255,0.06)',
-                }}
-              >
-                {STATUS_LABELS[file().status] ?? file().status}
-              </span>
-              <span
-                style={{
-                  flex: '1',
-                  'font-size': '13px',
-                  'font-family': "'JetBrains Mono', monospace",
-                  color: theme.fg,
-                  overflow: 'hidden',
-                  'text-overflow': 'ellipsis',
-                  'white-space': 'nowrap',
-                }}
-              >
-                {file().path}
-              </span>
-
-              {/* Split / Unified toggle */}
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '2px',
-                  background: 'rgba(255,255,255,0.04)',
-                  'border-radius': '6px',
-                  padding: '2px',
-                }}
-              >
-                <button
-                  onClick={() => setSideBySide(true)}
-                  style={{
-                    background: sideBySide() ? 'rgba(255,255,255,0.10)' : 'transparent',
-                    border: 'none',
-                    color: sideBySide() ? theme.fg : theme.fgMuted,
-                    'font-size': '11px',
-                    padding: '3px 10px',
-                    'border-radius': '4px',
-                    cursor: 'pointer',
-                    'font-family': 'inherit',
-                  }}
-                >
-                  Split
-                </button>
-                <button
-                  onClick={() => setSideBySide(false)}
-                  style={{
-                    background: !sideBySide() ? 'rgba(255,255,255,0.10)' : 'transparent',
-                    border: 'none',
-                    color: !sideBySide() ? theme.fg : theme.fgMuted,
-                    'font-size': '11px',
-                    padding: '3px 10px',
-                    'border-radius': '4px',
-                    cursor: 'pointer',
-                    'font-family': 'inherit',
-                  }}
-                >
-                  Unified
-                </button>
-              </div>
-
-              <button
-                onClick={() => openFileInEditor(props.worktreePath, file().path)}
-                disabled={!props.worktreePath}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: theme.fgMuted,
-                  cursor: props.worktreePath ? 'pointer' : 'default',
-                  opacity: props.worktreePath ? '1' : '0.3',
-                  padding: '4px',
-                  display: 'flex',
-                  'align-items': 'center',
-                  'border-radius': '4px',
-                }}
-                title="Open in editor"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-3a.75.75 0 0 1 1.5 0v3A3 3 0 0 1 12.5 16h-9A3 3 0 0 1 0 12.5v-9A3 3 0 0 1 3.5 0h3a.75.75 0 0 1 0 1.5h-3ZM10 .75a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0V2.56L8.53 8.53a.75.75 0 0 1-1.06-1.06L13.44 1.5H10.75A.75.75 0 0 1 10 .75Z" />
-                </svg>
-              </button>
-
-              <button
-                onClick={() => props.onClose()}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: theme.fgMuted,
-                  cursor: 'pointer',
-                  padding: '4px',
-                  display: 'flex',
-                  'align-items': 'center',
-                  'border-radius': '4px',
-                }}
-                title="Close"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
-                </svg>
-              </button>
+              Loading diffs...
             </div>
+          </Show>
 
-            {/* Body */}
+          <Show when={error()}>
             <div
               style={{
-                flex: '1',
-                overflow: 'hidden',
+                padding: '40px',
+                'text-align': 'center',
+                color: theme.error,
+                'font-size': sf(13),
               }}
             >
-              <Show when={loading()}>
-                <div style={{ padding: '40px', 'text-align': 'center', color: theme.fgMuted }}>
-                  Loading diff...
-                </div>
-              </Show>
-
-              <Show when={error()}>
-                <div style={{ padding: '40px', 'text-align': 'center', color: theme.error }}>
-                  {error()}
-                </div>
-              </Show>
-
-              <Show when={binary()}>
-                <div style={{ padding: '40px', 'text-align': 'center', color: theme.fgMuted }}>
-                  Binary file — cannot display diff
-                </div>
-              </Show>
-
-              <Show when={!loading() && !error() && !binary() && !hasChanges()}>
-                <div style={{ padding: '40px', 'text-align': 'center', color: theme.fgMuted }}>
-                  No changes
-                </div>
-              </Show>
-
-              <Show when={!loading() && !error() && !binary() && metadataOnly()}>
-                <div style={{ padding: '40px', 'text-align': 'center', color: theme.fgMuted }}>
-                  File metadata changed (permissions/mode) — no content differences
-                </div>
-              </Show>
-
-              <Show when={!loading() && !error() && !binary() && hasChanges() && !metadataOnly()}>
-                <MonacoDiffEditor
-                  oldContent={oldContent()}
-                  newContent={newContent()}
-                  language={detectLang(file().path)}
-                  sideBySide={sideBySide()}
-                />
-              </Show>
+              {error()}
             </div>
-          </>
-        )}
+          </Show>
+
+          <Show when={!loading() && !error()}>
+            <ScrollingDiffView
+              files={parsedFiles()}
+              scrollToPath={props.scrollToFile}
+              worktreePath={props.worktreePath}
+              searchQuery={searchQuery()}
+            />
+          </Show>
+        </div>
       </Show>
     </Dialog>
   );

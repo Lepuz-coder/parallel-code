@@ -51,7 +51,6 @@ import { extractLabel, consumePendingShellCommand } from '../lib/bookmarks';
 import { handleDragReorder } from '../lib/dragReorder';
 import { marked } from 'marked';
 import type { Task } from '../store/types';
-import type { ChangedFile } from '../ipc/types';
 
 interface TaskPanelProps {
   task: Task;
@@ -81,7 +80,7 @@ export function TaskPanel(props: TaskPanelProps) {
   const [pushing, setPushing] = createSignal(false);
   let pushSuccessTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(pushSuccessTimer));
-  const [diffFile, setDiffFile] = createSignal<ChangedFile | null>(null);
+  const [diffScrollTarget, setDiffScrollTarget] = createSignal<string | null>(null);
   const [editingProjectId, setEditingProjectId] = createSignal<string | null>(null);
   const [shellExits, setShellExits] = createStore<
     Record<string, { exitCode: number | null; signal: string | null }>
@@ -657,7 +656,7 @@ export function TaskPanel(props: TaskPanelProps) {
                       <ChangedFilesList
                         worktreePath={props.task.worktreePath}
                         isActive={props.isActive}
-                        onFileClick={setDiffFile}
+                        onFileClick={(file) => setDiffScrollTarget(file.path)}
                         ref={(el) => (changedFilesRef = el)}
                       />
                     </div>
@@ -1286,7 +1285,7 @@ export function TaskPanel(props: TaskPanelProps) {
         task={props.task}
         initialCleanup={getProject(props.task.projectId)?.deleteBranchOnClose ?? true}
         onDone={() => setShowMergeConfirm(false)}
-        onDiffFileClick={setDiffFile}
+        onDiffFileClick={(file) => setDiffScrollTarget(file.path)}
       />
       <PushDialog
         open={showPushConfirm()}
@@ -1306,11 +1305,11 @@ export function TaskPanel(props: TaskPanelProps) {
         }}
       />
       <DiffViewerDialog
-        file={diffFile()}
+        scrollToFile={diffScrollTarget()}
         worktreePath={props.task.worktreePath}
         projectRoot={getProject(props.task.projectId)?.path}
         branchName={props.task.branchName}
-        onClose={() => setDiffFile(null)}
+        onClose={() => setDiffScrollTarget(null)}
       />
       <EditProjectDialog project={editingProject()} onClose={() => setEditingProjectId(null)} />
       <Dialog open={planFullscreen()} onClose={() => setPlanFullscreen(false)} width="800px">

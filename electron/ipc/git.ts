@@ -558,6 +558,74 @@ export async function getChangedFiles(worktreePath: string): Promise<
   return files;
 }
 
+export async function getAllFileDiffs(worktreePath: string): Promise<string> {
+  const headHash = await pinHead(worktreePath);
+  const base = await detectMergeBase(worktreePath, headHash).catch(() => headHash);
+
+  // Single combined diff: merge-base to working tree.
+  // This avoids duplicate entries when a file has both committed and uncommitted changes.
+  let combinedDiff = '';
+  try {
+    const { stdout } = await exec('git', ['diff', '-U3', base], {
+      cwd: worktreePath,
+      maxBuffer: MAX_BUFFER,
+    });
+    combinedDiff = stdout;
+  } catch {
+    /* empty */
+  }
+
+  // Untracked files: build pseudo-diffs
+  let untrackedDiff = '';
+  try {
+    const { stdout } = await exec('git', ['status', '--porcelain'], {
+      cwd: worktreePath,
+      maxBuffer: MAX_BUFFER,
+    });
+    for (const line of stdout.split('\n')) {
+      if (!line.startsWith('??')) continue;
+      const filePath = normalizeStatusPath(line.slice(3));
+      if (!filePath) continue;
+      const fullPath = path.join(worktreePath, filePath);
+      try {
+        const stat = await fs.promises.stat(fullPath);
+        if (!stat.isFile() || stat.size >= MAX_BUFFER) continue;
+        const content = await fs.promises.readFile(fullPath, 'utf8');
+        const lines = content.split('\n');
+        const lineCount = content.endsWith('\n') ? lines.length - 1 : lines.length;
+        let pseudo = `diff --git a/${filePath} b/${filePath}\nnew file mode 100644\n--- /dev/null\n+++ b/${filePath}\n@@ -0,0 +1,${lineCount} @@\n`;
+        for (let i = 0; i < lineCount; i++) {
+          pseudo += `+${lines[i]}\n`;
+        }
+        untrackedDiff += pseudo;
+      } catch {
+        /* skip unreadable files */
+      }
+    }
+  } catch {
+    /* empty */
+  }
+
+  const parts = [combinedDiff, untrackedDiff].filter((p) => p.length > 0);
+  return parts.join('\n');
+}
+
+export async function getAllFileDiffsFromBranch(
+  projectRoot: string,
+  branchName: string,
+): Promise<string> {
+  const mainBranch = await detectMainBranch(projectRoot);
+  try {
+    const { stdout } = await exec('git', ['diff', '-U3', `${mainBranch}...${branchName}`], {
+      cwd: projectRoot,
+      maxBuffer: MAX_BUFFER,
+    });
+    return stdout;
+  } catch {
+    return '';
+  }
+}
+
 interface FileDiffResult {
   diff: string;
   oldContent: string;

@@ -17,6 +17,8 @@ export enum IPC {
   // Git
   GetChangedFiles = 'get_changed_files',
   GetChangedFilesFromBranch = 'get_changed_files_from_branch',
+  GetAllFileDiffs = 'get_all_file_diffs',
+  GetAllFileDiffsFromBranch = 'get_all_file_diffs_from_branch',
   GetFileDiff = 'get_file_diff',
   GetFileDiffFromBranch = 'get_file_diff_from_branch',
   GetGitignoredDirs = 'get_gitignored_dirs',

@@ -21,6 +21,8 @@ import {
   getCurrentBranch,
   getChangedFiles,
   getChangedFilesFromBranch,
+  getAllFileDiffs,
+  getAllFileDiffsFromBranch,
   getFileDiff,
   getFileDiffFromBranch,
   getWorktreeStatus,
@@ -149,6 +151,15 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
     return getChangedFilesFromBranch(args.projectRoot, args.branchName);
+  });
+  ipcMain.handle(IPC.GetAllFileDiffs, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    return getAllFileDiffs(args.worktreePath);
+  });
+  ipcMain.handle(IPC.GetAllFileDiffsFromBranch, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    validateBranchName(args.branchName, 'branchName');
+    return getAllFileDiffsFromBranch(args.projectRoot, args.branchName);
   });
   ipcMain.handle(IPC.GetFileDiff, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
