@@ -590,6 +590,17 @@ export async function getAllFileDiffs(worktreePath: string): Promise<string> {
       try {
         const stat = await fs.promises.stat(fullPath);
         if (!stat.isFile() || stat.size >= MAX_BUFFER) continue;
+
+        // Detect binary files by checking for null bytes (same heuristic git uses)
+        const probe = Buffer.alloc(Math.min(8000, stat.size));
+        const fd = await fs.promises.open(fullPath, 'r');
+        try {
+          await fd.read(probe, 0, probe.length, 0);
+        } finally {
+          await fd.close();
+        }
+        if (probe.includes(0)) continue;
+
         const content = await fs.promises.readFile(fullPath, 'utf8');
         const lines = content.split('\n');
         const lineCount = content.endsWith('\n') ? lines.length - 1 : lines.length;

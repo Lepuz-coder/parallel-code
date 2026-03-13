@@ -101,7 +101,7 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
       })
       .then((rawDiff) => {
         if (thisGen !== fetchGeneration) return;
-        const newFiles = parseUnifiedDiff(rawDiff);
+        const newFiles = parseUnifiedDiff(rawDiff).filter((f) => !f.binary);
         setParsedFiles(newFiles);
         setReviewAnnotations((prev) => evictStaleAnnotations(prev, newFiles));
       })
