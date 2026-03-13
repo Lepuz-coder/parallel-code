@@ -288,12 +288,13 @@ function App() {
     await loadAgents();
     await loadState();
 
-    // Restore plan content for tasks that have worktrees with plan files on disk
+    // Restore plan content for tasks that had a plan file before restart
     for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
       const task = store.tasks[taskId];
-      if (!task?.worktreePath) continue;
+      if (!task?.worktreePath || !task.planFileName) continue;
       invoke<{ content: string; fileName: string } | null>(IPC.ReadPlanContent, {
         worktreePath: task.worktreePath,
+        fileName: task.planFileName,
       }).then((result) => {
         if (result) setPlanContent(taskId, result.content, result.fileName);
       }).catch(() => {});

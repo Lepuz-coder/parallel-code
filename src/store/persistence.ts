@@ -65,6 +65,7 @@ export async function saveState(): Promise<void> {
       skipPermissions: task.skipPermissions,
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
+      planFileName: task.planFileName,
     };
   }
 
@@ -88,6 +89,7 @@ export async function saveState(): Promise<void> {
       skipPermissions: task.skipPermissions,
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
+      planFileName: task.planFileName,
       collapsed: true,
     };
   }
@@ -334,6 +336,7 @@ export async function loadState(): Promise<void> {
           skipPermissions: pt.skipPermissions === true,
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
+          planFileName: pt.planFileName,
         };
 
         s.tasks[taskId] = task;
@@ -398,6 +401,7 @@ export async function loadState(): Promise<void> {
           skipPermissions: pt.skipPermissions === true,
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
+          planFileName: pt.planFileName,
           collapsed: true,
           savedAgentDef: agentDef ?? undefined,
         };

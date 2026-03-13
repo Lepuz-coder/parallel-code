@@ -76,6 +76,7 @@ export interface PersistedTask {
   githubUrl?: string;
   savedInitialPrompt?: string;
   collapsed?: boolean;
+  planFileName?: string;
 }
 
 export interface PersistedTerminal {
