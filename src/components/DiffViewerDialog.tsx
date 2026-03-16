@@ -311,6 +311,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
               reviewAnnotations={review.annotations()}
               onAnnotationAdd={review.addAnnotation}
               onAnnotationDismiss={review.dismissAnnotation}
+              onAnnotationUpdate={review.updateAnnotation}
               scrollToAnnotation={review.scrollTarget()}
               onScrollRef={(el) => {
                 diffScrollRef = el;

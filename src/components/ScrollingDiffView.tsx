@@ -23,6 +23,7 @@ interface ScrollingDiffViewProps {
   reviewAnnotations: ReviewAnnotation[];
   onAnnotationAdd: (annotation: ReviewAnnotation) => void;
   onAnnotationDismiss: (id: string) => void;
+  onAnnotationUpdate: (id: string, comment: string) => void;
   scrollToAnnotation?: ReviewAnnotation | null;
   onScrollRef?: (el: HTMLDivElement) => void;
 }
@@ -391,6 +392,7 @@ function FileSection(props: {
   onDismissQuestion: (id: string) => void;
   reviewAnnotations: ReviewAnnotation[];
   onDismissAnnotation: (id: string) => void;
+  onAnnotationUpdate: (id: string, comment: string) => void;
   highlightedRange?: HighlightRange | null;
   pendingInput?: { filePath: string; afterLine: number } | null;
   onSubmit: (text: string, mode: 'review' | 'ask') => void;
@@ -606,6 +608,7 @@ function FileSection(props: {
                             <ReviewCommentCard
                               annotation={a}
                               onDismiss={() => props.onDismissAnnotation(a.id)}
+                              onUpdate={(comment) => props.onAnnotationUpdate(a.id, comment)}
                             />
                           )}
                         </For>
@@ -716,6 +719,8 @@ export function ScrollingDiffView(props: ScrollingDiffViewProps) {
     const sel = pendingInput();
     if (!sel) return;
 
+    const savedScroll = containerRef?.scrollTop ?? 0;
+
     if (mode === 'review') {
       props.onAnnotationAdd({
         id: crypto.randomUUID(),
@@ -742,6 +747,10 @@ export function ScrollingDiffView(props: ScrollingDiffViewProps) {
     setPendingInput(null);
     setHighlightedRange(null);
     window.getSelection()?.removeAllRanges();
+
+    requestAnimationFrame(() => {
+      if (containerRef) containerRef.scrollTop = savedScroll;
+    });
   }
 
   function dismissInput() {
@@ -778,6 +787,7 @@ export function ScrollingDiffView(props: ScrollingDiffViewProps) {
             onDismissQuestion={dismissQuestion}
             reviewAnnotations={props.reviewAnnotations}
             onDismissAnnotation={props.onAnnotationDismiss}
+            onAnnotationUpdate={props.onAnnotationUpdate}
             highlightedRange={highlightedRange()}
             pendingInput={(() => {
               const pi = pendingInput();
