@@ -238,6 +238,7 @@ export async function closeTask(taskId: string): Promise<void> {
     if (!task.directMode) {
       // Remove worktree + branch
       await invoke(IPC.DeleteTask, {
+        taskId,
         agentIds: [...agentIds, ...shellAgentIds],
         branchName,
         deleteBranch,
@@ -265,6 +266,12 @@ const REMOVE_ANIMATION_MS = 300;
 
 function removeTaskFromStore(taskId: string, agentIds: string[]): void {
   recordTaskCompleted();
+
+  // Stop the plan file watcher (fs.FSWatcher + poll interval) on the backend.
+  // This is the single convergence point for all task removal paths (close,
+  // merge+cleanup, direct-mode close), so placing it here prevents leaks
+  // regardless of which path removed the task.  Idempotent if already stopped.
+  invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
 
   // Clean up agent activity tracking (timers, buffers, decoders) before
   // the store entries are deleted — otherwise markAgentExited can't find
@@ -499,6 +506,7 @@ export async function collapseTask(taskId: string): Promise<void> {
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
 
+  invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
   for (const agentId of agentIds) {
     await invoke(IPC.KillAgent, { agentId }).catch(console.error);
     clearAgentActivity(agentId);

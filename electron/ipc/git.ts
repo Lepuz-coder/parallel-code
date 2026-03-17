@@ -18,6 +18,20 @@ const mergeBaseCache = new Map<string, CacheEntry>();
 const MAIN_BRANCH_TTL = 60_000; // 60s
 const MERGE_BASE_TTL = 30_000; // 30s
 const MAX_BUFFER = 10 * 1024 * 1024; // 10MB
+const STDERR_CAP = 4096; // cap for stderr buffers in spawned git processes
+
+// Sweep expired cache entries periodically so stale entries from repos that
+// are no longer queried don't accumulate (lazy deletion alone isn't enough).
+const CACHE_SWEEP_INTERVAL = 5 * 60_000; // 5 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of mainBranchCache) {
+    if (v.expiresAt <= now) mainBranchCache.delete(k);
+  }
+  for (const [k, v] of mergeBaseCache) {
+    if (v.expiresAt <= now) mergeBaseCache.delete(k);
+  }
+}, CACHE_SWEEP_INTERVAL).unref();
 
 /** Check if a file is binary by looking for null bytes in the first 8KB (same heuristic as git). */
 async function isBinaryFile(filePath: string): Promise<boolean> {
@@ -1062,10 +1076,15 @@ export function pushTask(
       send(chunk.toString('utf8'));
     });
 
+    // Only the last line is used for error messages — cap the buffer to avoid
+    // unbounded growth from verbose git push output (progress, LFS, etc.).
     let stderrBuf = '';
     proc.stderr?.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf8');
       stderrBuf += text;
+      if (stderrBuf.length > STDERR_CAP) {
+        stderrBuf = stderrBuf.slice(-STDERR_CAP);
+      }
       send(text);
     });
 

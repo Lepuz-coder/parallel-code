@@ -16,7 +16,12 @@ import {
   dockerImageExists,
   buildDockerImage,
 } from './pty.js';
-import { ensurePlansDirectory, startPlanWatcher, stopPlanWatcher, readPlanForWorktree } from './plans.js';
+import {
+  ensurePlansDirectory,
+  startPlanWatcher,
+  stopPlanWatcher,
+  readPlanForWorktree,
+} from './plans.js';
 import { startRemoteServer } from '../remote/server.js';
 import {
   getGitIgnoredDirs,
@@ -160,7 +165,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
     assertBoolean(args.deleteBranch, 'deleteBranch');
-    return deleteTask(args.agentIds, args.branchName, args.deleteBranch, args.projectRoot);
+    assertOptionalString(args.taskId, 'taskId');
+    return deleteTask({
+      taskId: args.taskId,
+      agentIds: args.agentIds,
+      branchName: args.branchName,
+      deleteBranch: args.deleteBranch,
+      projectRoot: args.projectRoot,
+    });
   });
 
   // --- Git commands ---
