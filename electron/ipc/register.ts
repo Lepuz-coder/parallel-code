@@ -80,6 +80,36 @@ function validateBranchName(name: unknown, label: string): void {
   if (name.startsWith('-')) throw new Error(`${label} must not start with "-"`);
 }
 
+/**
+ * Create a leading+trailing throttled event forwarder.
+ * Fires immediately, suppresses for `intervalMs`, then fires once more
+ * if events arrived during suppression (ensures the final state is always forwarded).
+ */
+function createThrottledForwarder(
+  win: BrowserWindow,
+  channel: string,
+  intervalMs: number,
+): () => void {
+  let throttled = false;
+  let pending = false;
+  return () => {
+    if (win.isDestroyed()) return;
+    if (throttled) {
+      pending = true;
+      return;
+    }
+    throttled = true;
+    win.webContents.send(channel);
+    setTimeout(() => {
+      throttled = false;
+      if (pending) {
+        pending = false;
+        if (!win.isDestroyed()) win.webContents.send(channel);
+      }
+    }, intervalMs);
+  };
+}
+
 export function registerAllHandlers(win: BrowserWindow): void {
   // --- Remote access state ---
   let remoteServer: ReturnType<typeof startRemoteServer> | null = null;
@@ -157,7 +187,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     assertStringArray(args.symlinkDirs, 'symlinkDirs');
     assertOptionalString(args.branchPrefix, 'branchPrefix');
-    const result = createTask(args.name, args.projectRoot, args.symlinkDirs, args.branchPrefix);
+    const result = createTask(
+      args.name,
+      args.projectRoot,
+      args.symlinkDirs,
+      args.branchPrefix ?? 'task',
+    );
     result.then((r: { id: string }) => taskNames.set(r.id, args.name)).catch(() => {});
     return result;
   });
@@ -233,7 +268,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertBoolean(args.squash, 'squash');
     assertOptionalString(args.message, 'message');
     assertOptionalBoolean(args.cleanup, 'cleanup');
-    return mergeTask(args.projectRoot, args.branchName, args.squash, args.message, args.cleanup);
+    return mergeTask(
+      args.projectRoot,
+      args.branchName,
+      args.squash,
+      args.message ?? null,
+      args.cleanup ?? false,
+    );
   });
   ipcMain.handle(IPC.GetBranchLog, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
@@ -563,44 +604,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
   win.on('blur', () => {
     if (!win.isDestroyed()) win.webContents.send(IPC.WindowBlur);
   });
-  // Leading+trailing throttle: fire immediately, suppress for 100ms, then fire once more
-  // if events arrived during suppression (ensures the final state is always forwarded).
-  let resizeThrottled = false;
-  let resizePending = false;
-  win.on('resize', () => {
-    if (win.isDestroyed()) return;
-    if (resizeThrottled) {
-      resizePending = true;
-      return;
-    }
-    resizeThrottled = true;
-    win.webContents.send(IPC.WindowResized);
-    setTimeout(() => {
-      resizeThrottled = false;
-      if (resizePending) {
-        resizePending = false;
-        if (!win.isDestroyed()) win.webContents.send(IPC.WindowResized);
-      }
-    }, 100);
-  });
-  let moveThrottled = false;
-  let movePending = false;
-  win.on('move', () => {
-    if (win.isDestroyed()) return;
-    if (moveThrottled) {
-      movePending = true;
-      return;
-    }
-    moveThrottled = true;
-    win.webContents.send(IPC.WindowMoved);
-    setTimeout(() => {
-      moveThrottled = false;
-      if (movePending) {
-        movePending = false;
-        if (!win.isDestroyed()) win.webContents.send(IPC.WindowMoved);
-      }
-    }, 100);
-  });
+  win.on('resize', createThrottledForwarder(win, IPC.WindowResized, 100));
+  win.on('move', createThrottledForwarder(win, IPC.WindowMoved, 100));
   win.on('close', (e) => {
     e.preventDefault();
     if (!win.isDestroyed()) {

@@ -146,14 +146,6 @@ export function Sidebar() {
     });
   });
 
-  async function handleAddProject() {
-    await pickAndAddProject();
-  }
-
-  function handleRemoveProject(projectId: string) {
-    setConfirmRemove(projectId);
-  }
-
   function computeDropIndex(clientY: number, fromIdx: number): number {
     if (!taskListRef) return fromIdx;
     const items = taskListRef.querySelectorAll<HTMLElement>('[data-task-index]');
@@ -334,7 +326,7 @@ export function Sidebar() {
                   <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
                 </svg>
               }
-              onClick={() => handleAddProject()}
+              onClick={() => pickAndAddProject()}
               title="Add project"
               size="sm"
             />
@@ -406,7 +398,7 @@ export function Sidebar() {
                   class="icon-btn"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleRemoveProject(project.id);
+                    setConfirmRemove(project.id);
                   }}
                   title="Remove project"
                   style={{
@@ -714,6 +706,25 @@ export function Sidebar() {
   );
 }
 
+function DirectModeBadge(props: { branchName: string }) {
+  return (
+    <span
+      style={{
+        'font-size': sf(10),
+        'font-weight': '600',
+        padding: '1px 5px',
+        'border-radius': '3px',
+        background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
+        color: theme.warning,
+        'flex-shrink': '0',
+        'line-height': '1.5',
+      }}
+    >
+      {props.branchName}
+    </span>
+  );
+}
+
 function CollapsedTaskRow(props: { taskId: string }) {
   const task = () => store.tasks[props.taskId];
   return (
@@ -755,20 +766,7 @@ function CollapsedTaskRow(props: { taskId: string }) {
         >
           <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" />
           <Show when={t().directMode}>
-            <span
-              style={{
-                'font-size': sf(10),
-                'font-weight': '600',
-                padding: '1px 5px',
-                'border-radius': '3px',
-                background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
-                color: theme.warning,
-                'flex-shrink': '0',
-                'line-height': '1.5',
-              }}
-            >
-              {t().branchName}
-            </span>
+            <DirectModeBadge branchName={t().branchName} />
           </Show>
           <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis' }}>{t().name}</span>
         </div>

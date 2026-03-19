@@ -1,4 +1,4 @@
-import { store, setStore, updateWindowTitle } from './core';
+import { store, setStore } from './core';
 import { showNotification } from './notification';
 import { pickAndAddProject } from './projects';
 import { reorderTask } from './tasks';
@@ -9,7 +9,6 @@ export function setActiveTask(id: string): void {
   if (!task && !terminal) return;
   setStore('activeTaskId', id);
   setStore('activeAgentId', task?.agentIds[0] ?? null);
-  updateWindowTitle(task?.name ?? terminal?.name);
 }
 
 export function setActiveAgent(agentId: string): void {

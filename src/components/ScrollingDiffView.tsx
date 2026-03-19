@@ -104,6 +104,9 @@ interface ActiveQuestion {
 // Search highlight helpers
 // ---------------------------------------------------------------------------
 
+const SEARCH_HIGHLIGHT_BG = 'rgba(255, 200, 50, 0.35)';
+const CURRENT_MATCH_BG = 'rgba(100, 160, 255, 0.35)';
+
 function highlightSearchMatches(text: string, query: string | undefined): JSX.Element {
   if (!query || query.length === 0) return <>{text}</>;
   const lowerText = text.toLowerCase();
@@ -114,9 +117,7 @@ function highlightSearchMatches(text: string, query: string | undefined): JSX.El
   while (idx !== -1) {
     if (idx > lastIdx) parts.push(<>{text.slice(lastIdx, idx)}</>);
     parts.push(
-      <mark
-        style={{ background: 'rgba(255, 200, 50, 0.35)', color: 'inherit', 'border-radius': '2px' }}
-      >
+      <mark style={{ background: SEARCH_HIGHLIGHT_BG, color: 'inherit', 'border-radius': '2px' }}>
         {text.slice(idx, idx + query.length)}
       </mark>,
     );
@@ -133,17 +134,18 @@ function highlightSearchInHtml(html: string, query: string | undefined): string 
   // Split HTML into tags and text segments, only replace in text segments
   return html.replace(/([^<>]+)|(<[^>]*>)/g, (_match, text, tag) => {
     if (tag) return tag; // keep HTML tags unchanged
-    const lowerText = (text as string).toLowerCase();
+    const segment: string = text; // guaranteed defined since one of text/tag always matches
+    const lowerText = segment.toLowerCase();
     let result = '';
     let lastIdx = 0;
     let idx = lowerText.indexOf(lowerQuery);
     while (idx !== -1) {
-      result += (text as string).slice(lastIdx, idx);
-      result += `<mark style="background:rgba(255,200,50,0.35);color:inherit;border-radius:2px">${(text as string).slice(idx, idx + query.length)}</mark>`;
+      result += segment.slice(lastIdx, idx);
+      result += `<mark style="background:${SEARCH_HIGHLIGHT_BG};color:inherit;border-radius:2px">${segment.slice(idx, idx + query.length)}</mark>`;
       lastIdx = idx + query.length;
       idx = lowerText.indexOf(lowerQuery, lastIdx);
     }
-    result += (text as string).slice(lastIdx);
+    result += segment.slice(lastIdx);
     return result;
   });
 }
@@ -159,7 +161,7 @@ function DiffLineView(props: {
   filePath: string;
   highlighted?: boolean;
 }) {
-  const bg = () => (props.highlighted ? 'rgba(100, 160, 255, 0.35)' : LINE_BG[props.line.type]);
+  const bg = () => (props.highlighted ? CURRENT_MATCH_BG : LINE_BG[props.line.type]);
 
   return (
     <div
@@ -287,24 +289,27 @@ function HunkView(props: {
   );
 }
 
-function ExpandableGap(props: {
-  prevHunk: Hunk;
-  currentHunk: Hunk;
+/** Unified gap view for leading (before first hunk) and between-hunk gaps.
+ *  startLine/endLine are 1-based (inclusive/exclusive). oldLineStart is the
+ *  corresponding old-file line number for the first gap line. */
+function GapView(props: {
+  startLine: number;
+  endLine: number;
+  oldLineStart: number;
   lang: string;
   worktreePath: string;
   filePath: string;
   searchQuery?: string;
   highlightedRange?: HighlightRange | null;
+  borderTop?: boolean;
+  borderBottom?: boolean;
 }) {
   const [expanded, setExpanded] = createSignal(false);
   const [lines, setLines] = createSignal<DiffLine[]>([]);
   const [highlighted, setHighlighted] = createSignal<string[] | null>(null);
   const [loading, setLoading] = createSignal(false);
 
-  const hiddenCount = () => {
-    const prevEnd = props.prevHunk.newStart + props.prevHunk.newCount;
-    return props.currentHunk.newStart - prevEnd;
-  };
+  const hiddenCount = () => props.endLine - props.startLine;
 
   onMount(() => {
     if (hiddenCount() > 0 && hiddenCount() <= MIN_COLLAPSE_LINES) expand();
@@ -319,111 +324,12 @@ function ExpandableGap(props: {
         filePath: props.filePath,
       });
       const fileLines = result.newContent.split('\n');
-      const startLine = props.prevHunk.newStart + props.prevHunk.newCount;
-      const endLine = props.currentHunk.newStart;
-      const prevOldEnd = props.prevHunk.oldStart + props.prevHunk.oldCount;
-      const prevNewEnd = props.prevHunk.newStart + props.prevHunk.newCount;
       const gapLines: DiffLine[] = [];
-      for (let n = startLine; n < endLine; n++) {
+      for (let n = props.startLine; n < props.endLine; n++) {
         gapLines.push({
           type: 'context',
           content: fileLines[n - 1] ?? '',
-          oldLine: prevOldEnd + (n - prevNewEnd),
-          newLine: n,
-        });
-      }
-      setLines(gapLines);
-      setExpanded(true);
-
-      // Highlight expanded lines
-      const code = gapLines.map((l) => l.content).join('\n');
-      highlightLines(code, props.lang)
-        .then(setHighlighted)
-        .catch(() => {});
-    } catch {
-      /* fetch failed — keep collapsed */
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Show
-      when={expanded()}
-      fallback={
-        <div
-          onClick={expand}
-          style={{
-            padding: '2px 0',
-            'text-align': 'center',
-            color: theme.fgSubtle,
-            'font-size': sf(11),
-            'font-family': "'JetBrains Mono', monospace",
-            background: theme.bgElevated,
-            'border-top': `1px solid ${theme.borderSubtle}`,
-            'border-bottom': `1px solid ${theme.borderSubtle}`,
-            'user-select': 'none',
-            cursor: hiddenCount() > 0 ? 'pointer' : 'default',
-          }}
-        >
-          {loading()
-            ? 'Loading...'
-            : hiddenCount() > 0
-              ? `${hiddenCount()} lines hidden`
-              : '\u00B7\u00B7\u00B7'}
-        </div>
-      }
-    >
-      <For each={lines()}>
-        {(line, i) => (
-          <DiffLineView
-            line={line}
-            highlightedHtml={highlighted()?.[i()] ?? null}
-            searchQuery={props.searchQuery}
-            filePath={props.filePath}
-            highlighted={isLineHighlighted(props.highlightedRange, props.filePath, line.newLine)}
-          />
-        )}
-      </For>
-    </Show>
-  );
-}
-
-function LeadingGap(props: {
-  firstHunk: Hunk;
-  lang: string;
-  worktreePath: string;
-  filePath: string;
-  searchQuery?: string;
-  highlightedRange?: HighlightRange | null;
-}) {
-  const [expanded, setExpanded] = createSignal(false);
-  const [lines, setLines] = createSignal<DiffLine[]>([]);
-  const [highlighted, setHighlighted] = createSignal<string[] | null>(null);
-  const [loading, setLoading] = createSignal(false);
-
-  const hiddenCount = () => props.firstHunk.newStart - 1;
-
-  onMount(() => {
-    if (hiddenCount() > 0 && hiddenCount() <= MIN_COLLAPSE_LINES) expand();
-  });
-
-  async function expand() {
-    if (expanded() || loading()) return;
-    setLoading(true);
-    try {
-      const result = await invoke<FileDiffResult>(IPC.GetFileDiff, {
-        worktreePath: props.worktreePath,
-        filePath: props.filePath,
-      });
-      const fileLines = result.newContent.split('\n');
-      const endLine = props.firstHunk.newStart;
-      const gapLines: DiffLine[] = [];
-      for (let n = 1; n < endLine; n++) {
-        gapLines.push({
-          type: 'context',
-          content: fileLines[n - 1] ?? '',
-          oldLine: n,
+          oldLine: props.oldLineStart + (n - props.startLine),
           newLine: n,
         });
       }
@@ -455,7 +361,8 @@ function LeadingGap(props: {
               'font-size': sf(11),
               'font-family': "'JetBrains Mono', monospace",
               background: theme.bgElevated,
-              'border-bottom': `1px solid ${theme.borderSubtle}`,
+              'border-top': props.borderTop ? `1px solid ${theme.borderSubtle}` : undefined,
+              'border-bottom': props.borderBottom ? `1px solid ${theme.borderSubtle}` : undefined,
               'user-select': 'none',
               cursor: 'pointer',
             }}
@@ -761,27 +668,39 @@ function FileSection(props: {
         <Show when={!props.file.binary}>
           <div style={{ 'padding-bottom': '8px', background: 'rgba(0, 0, 0, 0.15)' }}>
             <Show when={props.file.hunks.length > 0 && props.file.status !== 'D'}>
-              <LeadingGap
-                firstHunk={props.file.hunks[0]}
+              <GapView
+                startLine={1}
+                endLine={props.file.hunks[0].newStart}
+                oldLineStart={1}
                 lang={lang()}
                 worktreePath={props.worktreePath}
                 filePath={props.file.path}
                 searchQuery={props.searchQuery}
                 highlightedRange={props.highlightedRange}
+                borderBottom
               />
             </Show>
             <For each={props.file.hunks}>
               {(hunk, hunkIdx) => (
                 <>
                   <Show when={hunkIdx() > 0}>
-                    <ExpandableGap
-                      prevHunk={props.file.hunks[hunkIdx() - 1]}
-                      currentHunk={hunk}
+                    <GapView
+                      startLine={
+                        props.file.hunks[hunkIdx() - 1].newStart +
+                        props.file.hunks[hunkIdx() - 1].newCount
+                      }
+                      endLine={hunk.newStart}
+                      oldLineStart={
+                        props.file.hunks[hunkIdx() - 1].oldStart +
+                        props.file.hunks[hunkIdx() - 1].oldCount
+                      }
                       lang={lang()}
                       worktreePath={props.worktreePath}
                       filePath={props.file.path}
                       searchQuery={props.searchQuery}
                       highlightedRange={props.highlightedRange}
+                      borderTop
+                      borderBottom
                     />
                   </Show>
                   <HunkView
@@ -1012,7 +931,7 @@ export function ScrollingDiffView(props: ScrollingDiffViewProps) {
       style={{
         height: '100%',
         'overflow-y': 'auto',
-        background: '#000',
+        background: theme.bg,
         position: 'relative',
       }}
     >

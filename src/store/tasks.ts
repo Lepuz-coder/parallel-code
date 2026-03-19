@@ -1,7 +1,7 @@
 import { produce } from 'solid-js/store';
 import { invoke, Channel } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import { store, setStore, updateWindowTitle, cleanupPanelEntries } from './core';
+import { store, setStore, cleanupPanelEntries } from './core';
 import { setTaskFocusedPanel } from './focus';
 import { getProject, getProjectPath, getProjectBranchPrefix, isProjectMissing } from './projects';
 import { setPendingShellCommand } from '../lib/bookmarks';
@@ -16,6 +16,28 @@ import { recordMergedLines, recordTaskCompleted } from './completion';
 import type { AgentDef, CreateTaskResult, MergeResult } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
 import type { Agent, Task } from './types';
+
+function initTaskInStore(
+  taskId: string,
+  task: Task,
+  agent: Agent,
+  projectId: string,
+  agentDef: AgentDef | undefined,
+): void {
+  setStore(
+    produce((s) => {
+      s.tasks[taskId] = task;
+      s.agents[agent.id] = agent;
+      s.taskOrder.push(taskId);
+      s.activeTaskId = taskId;
+      s.activeAgentId = agent.id;
+      s.lastProjectId = projectId;
+      if (agentDef) s.lastAgentId = agentDef.id;
+    }),
+  );
+  markAgentSpawned(agent.id);
+  rescheduleTaskStatusPolling();
+}
 
 const AGENT_WRITE_READY_TIMEOUT_MS = 8_000;
 const AGENT_WRITE_RETRY_MS = 50;
@@ -96,12 +118,12 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     shellAgentIds: [],
     notes: '',
     lastPrompt: '',
-    initialPrompt: initialPrompt || undefined,
-    skipPermissions: skipPermissions || undefined,
-    dockerMode: dockerMode || undefined,
-    dockerImage: dockerImage || undefined,
+    initialPrompt: initialPrompt ?? undefined,
+    skipPermissions: skipPermissions ?? undefined,
+    dockerMode: dockerMode ?? undefined,
+    dockerImage: dockerImage ?? undefined,
     githubUrl,
-    savedInitialPrompt: initialPrompt || undefined,
+    savedInitialPrompt: initialPrompt ?? undefined,
   };
 
   const agent: Agent = {
@@ -116,22 +138,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     generation: 0,
   };
 
-  setStore(
-    produce((s) => {
-      s.tasks[result.id] = task;
-      s.agents[agentId] = agent;
-      s.taskOrder.push(result.id);
-      s.activeTaskId = result.id;
-      s.activeAgentId = agentId;
-      s.lastProjectId = projectId;
-      s.lastAgentId = agentDef.id;
-    }),
-  );
-
-  // Mark as busy immediately; terminal output may arrive later.
-  markAgentSpawned(agentId);
-  rescheduleTaskStatusPolling();
-  updateWindowTitle(name);
+  initTaskInStore(result.id, task, agent, projectId, agentDef);
   return result.id;
 }
 
@@ -169,12 +176,12 @@ export async function createDirectTask(opts: CreateDirectTaskOptions): Promise<s
     shellAgentIds: [],
     notes: '',
     lastPrompt: '',
-    initialPrompt: initialPrompt || undefined,
-    savedInitialPrompt: initialPrompt || undefined,
+    initialPrompt: initialPrompt ?? undefined,
+    savedInitialPrompt: initialPrompt ?? undefined,
     directMode: true,
-    skipPermissions: skipPermissions || undefined,
-    dockerMode: dockerMode || undefined,
-    dockerImage: dockerImage || undefined,
+    skipPermissions: skipPermissions ?? undefined,
+    dockerMode: dockerMode ?? undefined,
+    dockerImage: dockerImage ?? undefined,
     githubUrl,
   };
 
@@ -190,21 +197,7 @@ export async function createDirectTask(opts: CreateDirectTaskOptions): Promise<s
     generation: 0,
   };
 
-  setStore(
-    produce((s) => {
-      s.tasks[id] = task;
-      s.agents[agentId] = agent;
-      s.taskOrder.push(id);
-      s.activeTaskId = id;
-      s.activeAgentId = agentId;
-      s.lastProjectId = projectId;
-      s.lastAgentId = agentDef.id;
-    }),
-  );
-
-  markAgentSpawned(agentId);
-  rescheduleTaskStatusPolling();
-  updateWindowTitle(name);
+  initTaskInStore(id, task, agent, projectId, agentDef);
   return id;
 }
 
@@ -314,10 +307,6 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
     );
 
     rescheduleTaskStatusPolling();
-    const activeId = store.activeTaskId;
-    const activeTask = activeId ? store.tasks[activeId] : null;
-    const activeTerminal = activeId ? store.terminals[activeId] : null;
-    updateWindowTitle(activeTask?.name ?? activeTerminal?.name);
   }, REMOVE_ANIMATION_MS);
 }
 
@@ -374,9 +363,6 @@ export async function pushTask(taskId: string, onOutput: Channel<string>): Promi
 
 export function updateTaskName(taskId: string, name: string): void {
   setStore('tasks', taskId, 'name', name);
-  if (store.activeTaskId === taskId) {
-    updateWindowTitle(name);
-  }
 }
 
 export function updateTaskNotes(taskId: string, notes: string): void {
@@ -507,14 +493,11 @@ export async function collapseTask(taskId: string): Promise<void> {
   const shellAgentIds = [...task.shellAgentIds];
 
   invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
-  for (const agentId of agentIds) {
-    await invoke(IPC.KillAgent, { agentId }).catch(console.error);
-    clearAgentActivity(agentId);
-  }
-  for (const shellId of shellAgentIds) {
-    await invoke(IPC.KillAgent, { agentId: shellId }).catch(console.error);
-    clearAgentActivity(shellId);
-  }
+  const allIds = [...agentIds, ...shellAgentIds];
+  await Promise.allSettled(
+    allIds.map((id) => invoke(IPC.KillAgent, { agentId: id }).catch(console.error)),
+  );
+  for (const id of allIds) clearAgentActivity(id);
 
   setStore(
     produce((s) => {
@@ -543,10 +526,6 @@ export async function collapseTask(taskId: string): Promise<void> {
   );
 
   rescheduleTaskStatusPolling();
-  const activeId = store.activeTaskId;
-  const activeTask = activeId ? store.tasks[activeId] : null;
-  const activeTerminal = activeId ? store.terminals[activeId] : null;
-  updateWindowTitle(activeTask?.name ?? activeTerminal?.name);
 }
 
 export function uncollapseTask(taskId: string): void {
@@ -589,8 +568,6 @@ export function uncollapseTask(taskId: string): void {
     markAgentSpawned(agentId);
     rescheduleTaskStatusPolling();
   }
-
-  updateWindowTitle(task.name);
 }
 
 // --- GitHub drop-to-create helpers ---

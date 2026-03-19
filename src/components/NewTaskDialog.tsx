@@ -21,7 +21,7 @@ import {
 import { toBranchName, sanitizeBranchPrefix } from '../lib/branch-name';
 import { cleanTaskName } from '../lib/clean-task-name';
 import { extractGitHubUrl } from '../lib/github-url';
-import { theme } from '../lib/theme';
+import { theme, sectionLabelStyle, bannerStyle } from '../lib/theme';
 import { AgentSelector } from './AgentSelector';
 import { BranchPrefixField } from './BranchPrefixField';
 import { ProjectSelect } from './ProjectSelect';
@@ -444,16 +444,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           data-nav-field="project"
           style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
         >
-          <label
-            style={{
-              'font-size': '11px',
-              color: theme.fgMuted,
-              'text-transform': 'uppercase',
-              'letter-spacing': '0.05em',
-            }}
-          >
-            Project
-          </label>
+          <label style={sectionLabelStyle}>Project</label>
           <ProjectSelect value={selectedProjectId()} onChange={setSelectedProjectId} />
         </div>
 
@@ -462,14 +453,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           data-nav-field="prompt"
           style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
         >
-          <label
-            style={{
-              'font-size': '11px',
-              color: theme.fgMuted,
-              'text-transform': 'uppercase',
-              'letter-spacing': '0.05em',
-            }}
-          >
+          <label style={sectionLabelStyle}>
             Prompt <span style={{ opacity: '0.5', 'text-transform': 'none' }}>(optional)</span>
           </label>
           <textarea
@@ -504,14 +488,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           data-nav-field="task-name"
           style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
         >
-          <label
-            style={{
-              'font-size': '11px',
-              color: theme.fgMuted,
-              'text-transform': 'uppercase',
-              'letter-spacing': '0.05em',
-            }}
-          >
+          <label style={sectionLabelStyle}>
             Task name{' '}
             <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
               (optional — derived from prompt)
@@ -621,12 +598,8 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           <Show when={directMode()}>
             <div
               style={{
+                ...bannerStyle(theme.warning),
                 'font-size': '12px',
-                color: theme.warning,
-                background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
-                padding: '8px 12px',
-                'border-radius': '8px',
-                border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
               }}
             >
               Changes will be made directly on the main branch without worktree isolation.
@@ -661,12 +634,8 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
             <Show when={skipPermissions()}>
               <div
                 style={{
+                  ...bannerStyle(theme.warning),
                   'font-size': '12px',
-                  color: theme.warning,
-                  background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
-                  padding: '8px 12px',
-                  'border-radius': '8px',
-                  border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                 }}
               >
                 The agent will run without asking for confirmation. It can read, write, and delete
@@ -833,12 +802,8 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
         <Show when={error()}>
           <div
             style={{
+              ...bannerStyle(theme.error),
               'font-size': '12px',
-              color: theme.error,
-              background: `color-mix(in srgb, ${theme.error} 8%, transparent)`,
-              padding: '8px 12px',
-              'border-radius': '8px',
-              border: `1px solid color-mix(in srgb, ${theme.error} 20%, transparent)`,
             }}
           >
             {error()}

@@ -6,6 +6,17 @@ import type { BrowserWindow } from 'electron';
 
 const exec = promisify(execFile);
 
+// --- Types ---
+
+/** A file entry from a git diff with status and line counts. */
+export interface ChangedFile {
+  path: string;
+  lines_added: number;
+  lines_removed: number;
+  status: string;
+  committed: boolean;
+}
+
 // --- TTL Caches ---
 
 interface CacheEntry {
@@ -219,7 +230,7 @@ async function detectRepoLockKey(p: string): Promise<string> {
   const commonDir = stdout.trim();
   const commonPath = path.isAbsolute(commonDir) ? commonDir : path.join(p, commonDir);
   try {
-    return fs.realpathSync(commonPath);
+    return await fs.promises.realpath(commonPath);
   } catch {
     return commonPath;
   }
@@ -230,7 +241,7 @@ function normalizeStatusPath(raw: string): string {
   if (!trimmed) return '';
   // Handle rename/copy "old -> new"
   const destination = trimmed.split(' -> ').pop()?.trim() ?? trimmed;
-  return destination.replace(/^"|"$/g, '');
+  return destination.replace(/^"|"$/g, '').replace(/\\(.)/g, '$1');
 }
 
 /** Parse combined `git diff --raw --numstat` output into status and numstat maps. */
@@ -338,8 +349,8 @@ function shallowSymlinkDir(source: string, target: string, exclude: Set<string>)
       if (!fs.existsSync(dst)) {
         fs.symlinkSync(src, dst);
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      console.warn(`Failed to symlink ${src} -> ${dst}:`, err);
     }
   }
 }
@@ -394,8 +405,8 @@ export async function createWorktree(
       } else {
         fs.symlinkSync(source, target);
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      console.warn(`Failed to symlink directory '${name}' into worktree:`, err);
     }
   }
 
@@ -444,7 +455,7 @@ export async function getGitIgnoredDirs(projectRoot: string): Promise<string[]> 
   for (const name of SYMLINK_CANDIDATES) {
     const dirPath = path.join(projectRoot, name);
     try {
-      fs.statSync(dirPath); // throws if entry doesn't exist
+      await fs.promises.stat(dirPath); // throws if entry doesn't exist
     } catch {
       continue;
     }
@@ -466,15 +477,7 @@ export async function getCurrentBranch(projectRoot: string): Promise<string> {
   return getCurrentBranchName(projectRoot);
 }
 
-export async function getChangedFiles(worktreePath: string): Promise<
-  Array<{
-    path: string;
-    lines_added: number;
-    lines_removed: number;
-    status: string;
-    committed: boolean;
-  }>
-> {
+export async function getChangedFiles(worktreePath: string): Promise<ChangedFile[]> {
   // Pin HEAD first so merge-base and diff use the same immutable commit
   const headHash = await pinHead(worktreePath);
   const base = await detectMergeBase(worktreePath, headHash).catch(() => headHash);
@@ -519,13 +522,7 @@ export async function getChangedFiles(worktreePath: string): Promise<
     if (p) untrackedPaths.add(p);
   }
 
-  const files: Array<{
-    path: string;
-    lines_added: number;
-    lines_removed: number;
-    status: string;
-    committed: boolean;
-  }> = [];
+  const files: ChangedFile[] = [];
   const seen = new Set<string>();
 
   // Committed files from diff base..HEAD
@@ -606,7 +603,7 @@ export async function getAllFileDiffs(worktreePath: string): Promise<string> {
   }
 
   // Untracked files: build pseudo-diffs
-  let untrackedDiff = '';
+  const untrackedParts: string[] = [];
   try {
     const { stdout } = await exec('git', ['status', '--porcelain'], {
       cwd: worktreePath,
@@ -621,17 +618,24 @@ export async function getAllFileDiffs(worktreePath: string): Promise<string> {
         const stat = await fs.promises.stat(fullPath);
         if (!stat.isFile() || stat.size >= MAX_BUFFER) continue;
         if (await isBinaryFile(fullPath)) {
-          untrackedDiff += `diff --git a/${filePath} b/${filePath}\nnew file mode 100644\nBinary files /dev/null and b/${filePath} differ\n`;
+          untrackedParts.push(
+            `diff --git a/${filePath} b/${filePath}\nnew file mode 100644\nBinary files /dev/null and b/${filePath} differ\n`,
+          );
           continue;
         }
         const content = await fs.promises.readFile(fullPath, 'utf8');
         const lines = content.split('\n');
         const lineCount = content.endsWith('\n') ? lines.length - 1 : lines.length;
-        let pseudo = `diff --git a/${filePath} b/${filePath}\nnew file mode 100644\n--- /dev/null\n+++ b/${filePath}\n@@ -0,0 +1,${lineCount} @@\n`;
+        const pseudoLines: string[] = [];
+        pseudoLines.push(`diff --git a/${filePath} b/${filePath}`);
+        pseudoLines.push('new file mode 100644');
+        pseudoLines.push('--- /dev/null');
+        pseudoLines.push(`+++ b/${filePath}`);
+        pseudoLines.push(`@@ -0,0 +1,${lineCount} @@`);
         for (let i = 0; i < lineCount; i++) {
-          pseudo += `+${lines[i]}\n`;
+          pseudoLines.push(`+${lines[i]}`);
         }
-        untrackedDiff += pseudo;
+        untrackedParts.push(pseudoLines.join('\n') + '\n');
       } catch {
         /* skip unreadable files */
       }
@@ -640,7 +644,7 @@ export async function getAllFileDiffs(worktreePath: string): Promise<string> {
     /* empty */
   }
 
-  const parts = [combinedDiff, untrackedDiff].filter((p) => p.length > 0);
+  const parts = [combinedDiff, untrackedParts.join('')].filter((p) => p.length > 0);
   return parts.join('\n');
 }
 
@@ -755,22 +759,28 @@ export async function getFileDiff(worktreePath: string, filePath: string): Promi
       diff = `Binary files /dev/null and b/${filePath} differ`;
     } else {
       const lines = newContent.split('\n');
-      let pseudo = `--- /dev/null\n+++ b/${filePath}\n@@ -0,0 +1,${lines.length} @@\n`;
+      const pseudoLines: string[] = [];
+      pseudoLines.push(`--- /dev/null`);
+      pseudoLines.push(`+++ b/${filePath}`);
+      pseudoLines.push(`@@ -0,0 +1,${lines.length} @@`);
       for (const line of lines) {
-        pseudo += `+${line}\n`;
+        pseudoLines.push(`+${line}`);
       }
-      diff = pseudo;
+      diff = pseudoLines.join('\n') + '\n';
     }
   }
 
   // Uncommitted deletion with no committed diff — build deletion pseudo-diff
   if (!diff && isUncommittedDeletion && oldContent) {
     const lines = oldContent.split('\n');
-    let pseudo = `--- a/${filePath}\n+++ /dev/null\n@@ -1,${lines.length} +0,0 @@\n`;
+    const pseudoLines: string[] = [];
+    pseudoLines.push(`--- a/${filePath}`);
+    pseudoLines.push(`+++ /dev/null`);
+    pseudoLines.push(`@@ -1,${lines.length} +0,0 @@`);
     for (const line of lines) {
-      pseudo += `-${line}\n`;
+      pseudoLines.push(`-${line}`);
     }
-    diff = pseudo;
+    diff = pseudoLines.join('\n') + '\n';
   }
 
   return { diff, oldContent, newContent };
@@ -951,15 +961,7 @@ export async function getBranchLog(worktreePath: string): Promise<string> {
 export async function getChangedFilesFromBranch(
   projectRoot: string,
   branchName: string,
-): Promise<
-  Array<{
-    path: string;
-    lines_added: number;
-    lines_removed: number;
-    status: string;
-    committed: boolean;
-  }>
-> {
+): Promise<ChangedFile[]> {
   const mainBranch = await detectMainBranch(projectRoot);
 
   let diffStr = '';
@@ -976,13 +978,7 @@ export async function getChangedFilesFromBranch(
 
   const { statusMap, numstatMap } = parseDiffRawNumstat(diffStr);
 
-  const files: Array<{
-    path: string;
-    lines_added: number;
-    lines_removed: number;
-    status: string;
-    committed: boolean;
-  }> = [];
+  const files: ChangedFile[] = [];
 
   for (const [p, [added, removed]] of numstatMap) {
     const status = statusMap.get(p) ?? 'M';
@@ -1132,8 +1128,8 @@ export async function rebaseTask(worktreePath: string): Promise<void> {
 export async function isGitRepo(dirPath: string): Promise<boolean> {
   try {
     const { stdout } = await exec('git', ['rev-parse', '--show-toplevel'], { cwd: dirPath });
-    const toplevel = fs.realpathSync(stdout.trim());
-    const resolved = fs.realpathSync(dirPath);
+    const toplevel = await fs.promises.realpath(stdout.trim());
+    const resolved = await fs.promises.realpath(dirPath);
     return toplevel === resolved;
   } catch {
     return false;

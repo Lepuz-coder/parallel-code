@@ -194,17 +194,13 @@ export function TaskPanel(props: TaskPanelProps) {
         setShowCloseConfirm(true);
         break;
       case 'merge':
-        if (!props.task.directMode) openMergeConfirm();
+        if (!props.task.directMode) setShowMergeConfirm(true);
         break;
       case 'push':
         if (!props.task.directMode) setShowPushConfirm(true);
         break;
     }
   });
-
-  function openMergeConfirm() {
-    setShowMergeConfirm(true);
-  }
 
   const firstAgent = () => {
     const ids = props.task.agentIds;
@@ -304,7 +300,7 @@ export function TaskPanel(props: TaskPanelProps) {
                     <path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z" />
                   </svg>
                 }
-                onClick={openMergeConfirm}
+                onClick={() => setShowMergeConfirm(true)}
                 title="Merge into main"
               />
               <div style={{ position: 'relative', display: 'inline-flex' }}>
@@ -399,7 +395,11 @@ export function TaskPanel(props: TaskPanelProps) {
           ),
         );
       } else {
-        revealItemInDir(props.task.worktreePath).catch(() => {});
+        revealItemInDir(props.task.worktreePath).catch((err) =>
+          showNotification(
+            `Could not open folder: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
       }
     };
 
@@ -1005,7 +1005,7 @@ export function TaskPanel(props: TaskPanelProps) {
                           isFocused={
                             props.isActive && store.focusedPanel[props.task.id] === `shell:${i()}`
                           }
-                          command={getShellCommand()}
+                          command={''}
                           args={['-l']}
                           cwd={props.task.worktreePath}
                           dockerMode={props.task.dockerMode}
@@ -1469,9 +1469,4 @@ export function TaskPanel(props: TaskPanelProps) {
       />
     </div>
   );
-}
-
-function getShellCommand(): string {
-  // Empty string tells the backend to use $SHELL (Unix) or %COMSPEC% (Windows)
-  return '';
 }

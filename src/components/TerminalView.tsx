@@ -419,7 +419,7 @@ export function TerminalView(props: TerminalViewProps) {
 
   createEffect(() => {
     const size = props.fontSize;
-    if (size === undefined || size === null || !term || !fitAddon) return;
+    if (size === undefined || !term || !fitAddon) return;
     term.options.fontSize = size;
     markDirty(props.agentId);
   });

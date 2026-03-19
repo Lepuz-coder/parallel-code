@@ -18,6 +18,17 @@ import { DEFAULT_TERMINAL_FONT, isTerminalFont } from '../lib/fonts';
 import { isLookPreset } from '../lib/look';
 import { syncTerminalCounter } from './terminals';
 
+/** Enrich an agent def with resume/skip-permissions args from fresh defaults. */
+function enrichAgentDef(agentDef: AgentDef | null | undefined, availableAgents: AgentDef[]): void {
+  if (!agentDef) return;
+  const fresh = availableAgents.find((a) => a.id === agentDef.id);
+  if (fresh) {
+    if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;
+    if (!agentDef.skip_permissions_args)
+      agentDef.skip_permissions_args = fresh.skip_permissions_args;
+  }
+}
+
 export async function saveState(): Promise<void> {
   const persisted: PersistedState = {
     projects: store.projects.map((p) => ({ ...p })),
@@ -325,15 +336,7 @@ export async function loadState(): Promise<void> {
         const agentId = crypto.randomUUID();
         const agentDef = pt.agentDef;
 
-        // Enrich with resume_args/skip_permissions_args from fresh defaults (handles old state files)
-        if (agentDef) {
-          const fresh = s.availableAgents.find((a) => a.id === agentDef.id);
-          if (fresh) {
-            if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;
-            if (!agentDef.skip_permissions_args)
-              agentDef.skip_permissions_args = fresh.skip_permissions_args;
-          }
-        }
+        enrichAgentDef(agentDef, s.availableAgents);
 
         const shellAgentIds: string[] = [];
         for (let i = 0; i < pt.shellCount; i++) {
@@ -396,16 +399,8 @@ export async function loadState(): Promise<void> {
         const pt = raw.tasks[taskId];
         if (!pt || !pt.collapsed) continue;
 
-        // Enrich agentDef with fresh defaults
         const agentDef = pt.agentDef;
-        if (agentDef) {
-          const fresh = s.availableAgents.find((a) => a.id === agentDef.id);
-          if (fresh) {
-            if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;
-            if (!agentDef.skip_permissions_args)
-              agentDef.skip_permissions_args = fresh.skip_permissions_args;
-          }
-        }
+        enrichAgentDef(agentDef, s.availableAgents);
 
         const task: Task = {
           id: pt.id,

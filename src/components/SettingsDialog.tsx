@@ -2,7 +2,7 @@ import { For, Show, createMemo } from 'solid-js';
 import { Dialog } from './Dialog';
 import { getAvailableTerminalFonts, getTerminalFontFamily, LIGATURE_FONTS } from '../lib/fonts';
 import { LOOK_PRESETS } from '../lib/look';
-import { theme } from '../lib/theme';
+import { theme, sectionLabelStyle } from '../lib/theme';
 import {
   store,
   setTerminalFont,
@@ -92,10 +92,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >
@@ -120,10 +117,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >
@@ -209,10 +203,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >
@@ -326,10 +317,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >
@@ -396,10 +384,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >
@@ -411,10 +396,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >

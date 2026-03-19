@@ -237,8 +237,10 @@ export function spawnAgent(
   sessions.set(args.agentId, session);
 
   // Batching strategy matching the Rust implementation
-  let batch = Buffer.alloc(0);
-  let tailBuf = Buffer.alloc(0);
+  let batchChunks: Buffer[] = [];
+  let batchSize = 0;
+  let tailChunks: Buffer[] = [];
+  let tailSize = 0;
 
   const send = (msg: unknown) => {
     if (!win.isDestroyed()) {
@@ -247,14 +249,16 @@ export function spawnAgent(
   };
 
   const flush = () => {
-    if (batch.length === 0) return;
+    if (batchSize === 0) return;
+    const batch = Buffer.concat(batchChunks);
     const encoded = batch.toString('base64');
     send({ type: 'Data', data: encoded });
     session.scrollback.write(batch);
     for (const sub of session.subscribers) {
       sub(encoded);
     }
-    batch = Buffer.alloc(0);
+    batchChunks = [];
+    batchSize = 0;
     if (session.flushTimer) {
       clearTimeout(session.flushTimer);
       session.flushTimer = null;
@@ -265,15 +269,20 @@ export function spawnAgent(
     const chunk = Buffer.from(data, 'utf8');
 
     // Maintain tail buffer for exit diagnostics
-    tailBuf = Buffer.concat([tailBuf, chunk]);
-    if (tailBuf.length > TAIL_CAP) {
-      tailBuf = tailBuf.subarray(tailBuf.length - TAIL_CAP);
+    tailChunks.push(chunk);
+    tailSize += chunk.length;
+    if (tailSize > TAIL_CAP) {
+      const combined = Buffer.concat(tailChunks);
+      const trimmed = combined.subarray(combined.length - TAIL_CAP);
+      tailChunks = [trimmed];
+      tailSize = trimmed.length;
     }
 
-    batch = Buffer.concat([batch, chunk]);
+    batchChunks.push(chunk);
+    batchSize += chunk.length;
 
     // Flush large batches immediately
-    if (batch.length >= BATCH_MAX) {
+    if (batchSize >= BATCH_MAX) {
       flush();
       return;
     }
@@ -299,6 +308,7 @@ export function spawnAgent(
     flush();
 
     // Parse tail buffer into last N lines for exit diagnostics
+    const tailBuf = Buffer.concat(tailChunks);
     const tailStr = tailBuf.toString('utf8');
     const lines = tailStr
       .split('\n')
