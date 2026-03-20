@@ -1236,6 +1236,8 @@ export function TaskPanel(props: TaskPanelProps) {
                             : []),
                         ]}
                         cwd={props.task.worktreePath}
+                        dockerMode={props.task.dockerMode}
+                        dockerImage={props.task.dockerImage}
                         onExit={(code) => markAgentExited(a().id, code)}
                         onData={(data) => markAgentOutput(a().id, data, props.task.id)}
                         onPromptDetected={(text) => setLastPrompt(props.task.id, text)}

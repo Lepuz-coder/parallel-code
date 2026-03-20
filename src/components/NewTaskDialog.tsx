@@ -15,6 +15,8 @@ import {
   hasDirectModeTask,
   getGitHubDropDefaults,
   setPrefillPrompt,
+  setDockerAvailable,
+  setDockerImage,
 } from '../store/store';
 import { toBranchName, sanitizeBranchPrefix } from '../lib/branch-name';
 import { cleanTaskName } from '../lib/clean-task-name';
@@ -42,6 +44,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   const [selectedDirs, setSelectedDirs] = createSignal<Set<string>>(new Set());
   const [directMode, setDirectMode] = createSignal(false);
   const [skipPermissions, setSkipPermissions] = createSignal(false);
+  const [dockerMode, setDockerMode] = createSignal(false);
   const [branchPrefix, setBranchPrefix] = createSignal('');
   let promptRef!: HTMLTextAreaElement;
   let formRef!: HTMLFormElement;
@@ -105,8 +108,14 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     setLoading(false);
     setDirectMode(false);
     setSkipPermissions(false);
+    setDockerMode(false);
 
     void (async () => {
+      // Check Docker availability in background
+      invoke<boolean>(IPC.CheckDockerAvailable).then(
+        (available) => setDockerAvailable(available),
+        () => setDockerAvailable(false),
+      );
       if (store.availableAgents.length === 0) {
         await loadAgents();
       }
@@ -296,6 +305,8 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           initialPrompt: isFromDrop ? undefined : p,
           githubUrl: ghUrl,
           skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
+          dockerMode: dockerMode() || undefined,
+          dockerImage: dockerMode() ? store.dockerImage : undefined,
         });
       } else {
         taskId = await createTask({
@@ -307,6 +318,8 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           branchPrefixOverride: prefix,
           githubUrl: ghUrl,
           skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
+          dockerMode: dockerMode() || undefined,
+          dockerImage: dockerMode() ? store.dockerImage : undefined,
         });
       }
       // Drop flow: prefill prompt without auto-sending
@@ -584,6 +597,72 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
               >
                 The agent will run without asking for confirmation. It can read, write, and delete
                 files, and execute commands without your approval.
+              </div>
+            </Show>
+          </div>
+        </Show>
+
+        {/* Docker isolation toggle */}
+        <Show when={store.dockerAvailable}>
+          <div
+            data-nav-field="docker-mode"
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: '8px',
+                'font-size': '12px',
+                color: theme.fg,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={dockerMode()}
+                onChange={(e) => setDockerMode(e.currentTarget.checked)}
+                style={{ 'accent-color': theme.accent, cursor: 'inherit' }}
+              />
+              Run in Docker container
+            </label>
+            <Show when={dockerMode()}>
+              <div
+                style={{
+                  'font-size': '12px',
+                  color: theme.success ?? theme.accent,
+                  background: `color-mix(in srgb, ${theme.success ?? theme.accent} 8%, transparent)`,
+                  padding: '8px 12px',
+                  'border-radius': '8px',
+                  border: `1px solid color-mix(in srgb, ${theme.success ?? theme.accent} 20%, transparent)`,
+                }}
+              >
+                The agent will run inside a Docker container. Only the project directory is mounted
+                — files outside the project are protected from accidental deletion.
+              </div>
+              <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+                <label
+                  style={{ 'font-size': '11px', color: theme.fgMuted, 'white-space': 'nowrap' }}
+                >
+                  Image:
+                </label>
+                <input
+                  type="text"
+                  value={store.dockerImage}
+                  onInput={(e) => setDockerImage(e.currentTarget.value)}
+                  placeholder="ubuntu:latest"
+                  style={{
+                    flex: '1',
+                    background: theme.bgInput,
+                    border: `1px solid ${theme.border}`,
+                    'border-radius': '6px',
+                    padding: '5px 10px',
+                    color: theme.fg,
+                    'font-size': '12px',
+                    'font-family': "'JetBrains Mono', monospace",
+                    outline: 'none',
+                  }}
+                />
               </div>
             </Show>
           </div>

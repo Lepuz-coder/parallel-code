@@ -76,6 +76,9 @@ const ALLOWED_CHANNELS = new Set([
   'get_remote_status',
   // Plan
   'plan_content',
+  'read_plan_content',
+  // Docker
+  'check_docker_available',
   // Ask about code
   'ask_about_code',
   'cancel_ask_about_code',

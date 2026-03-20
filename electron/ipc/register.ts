@@ -12,6 +12,7 @@ import {
   countRunningAgents,
   killAllAgents,
   getAgentMeta,
+  isDockerAvailable,
 } from './pty.js';
 import { ensurePlansDirectory, startPlanWatcher, readPlanForWorktree } from './plans.js';
 import { startRemoteServer } from '../remote/server.js';
@@ -124,6 +125,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   // --- Agent commands ---
   ipcMain.handle(IPC.ListAgents, () => listAgents());
+  ipcMain.handle(IPC.CheckDockerAvailable, () => isDockerAvailable());
 
   // --- Task commands ---
   ipcMain.handle(IPC.CreateTask, (_e, args) => {

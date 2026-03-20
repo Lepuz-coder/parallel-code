@@ -88,6 +88,8 @@ export function spawnAgent(
     cols: number;
     rows: number;
     isShell?: boolean;
+    dockerMode?: boolean;
+    dockerImage?: string;
     onOutput: { __CHANNEL_ID__: string };
   },
 ): void {
@@ -102,7 +104,12 @@ export function spawnAgent(
     throw new Error(`Command contains disallowed characters: ${command}`);
   }
 
-  validateCommand(command);
+  // In Docker mode, we validate `docker` exists rather than the inner command
+  if (!args.dockerMode) {
+    validateCommand(command);
+  } else {
+    validateCommand('docker');
+  }
 
   // Kill any existing session with the same agentId to prevent PTY leaks
   const existing = sessions.get(args.agentId);
@@ -148,12 +155,40 @@ export function spawnAgent(
   delete spawnEnv.CLAUDE_CODE_SESSION;
   delete spawnEnv.CLAUDE_CODE_ENTRYPOINT;
 
-  const proc = pty.spawn(command, args.args, {
+  let spawnCommand: string;
+  let spawnArgs: string[];
+
+  if (args.dockerMode) {
+    const image = args.dockerImage || 'ubuntu:latest';
+    spawnCommand = 'docker';
+    spawnArgs = [
+      'run',
+      '--rm',
+      '-it',
+      // Mount the project directory as the only writable volume
+      '-v',
+      `${cwd}:${cwd}`,
+      '-w',
+      cwd,
+      // Forward env vars the agent needs (API keys, git config, etc.)
+      ...buildDockerEnvFlags(spawnEnv),
+      // Mount SSH and git config read-only for git operations
+      ...buildDockerCredentialMounts(),
+      image,
+      command,
+      ...args.args,
+    ];
+  } else {
+    spawnCommand = command;
+    spawnArgs = args.args;
+  }
+
+  const proc = pty.spawn(spawnCommand, spawnArgs, {
     name: 'xterm-256color',
     cols: args.cols,
     rows: args.rows,
-    cwd,
-    env: spawnEnv,
+    cwd: args.dockerMode ? undefined : cwd,
+    env: args.dockerMode ? filteredEnv : spawnEnv,
   });
 
   const session: PtySession = {
@@ -343,4 +378,70 @@ export function getAgentMeta(
 export function getAgentCols(agentId: string): number {
   const s = sessions.get(agentId);
   return s ? s.proc.cols : 80;
+}
+
+// --- Docker mode helpers ---
+
+/** Env vars to forward into the Docker container (API keys, git identity, etc.). */
+const DOCKER_ENV_FORWARD = [
+  'ANTHROPIC_API_KEY',
+  'OPENAI_API_KEY',
+  'GEMINI_API_KEY',
+  'GOOGLE_API_KEY',
+  'GIT_AUTHOR_NAME',
+  'GIT_AUTHOR_EMAIL',
+  'GIT_COMMITTER_NAME',
+  'GIT_COMMITTER_EMAIL',
+  'TERM',
+  'COLORTERM',
+  'LANG',
+  'HOME',
+  'USER',
+  'PATH',
+];
+
+function buildDockerEnvFlags(env: Record<string, string>): string[] {
+  const flags: string[] = [];
+  for (const key of DOCKER_ENV_FORWARD) {
+    if (env[key]) {
+      flags.push('-e', `${key}=${env[key]}`);
+    }
+  }
+  return flags;
+}
+
+function buildDockerCredentialMounts(): string[] {
+  const mounts: string[] = [];
+  const home = process.env.HOME;
+  if (!home) return mounts;
+
+  // Mount SSH directory read-only for git push/pull
+  const sshDir = `${home}/.ssh`;
+  try {
+    fs.accessSync(sshDir, fs.constants.R_OK);
+    mounts.push('-v', `${sshDir}:${sshDir}:ro`);
+  } catch {
+    // No .ssh dir — skip
+  }
+
+  // Mount git config read-only
+  const gitconfig = `${home}/.gitconfig`;
+  try {
+    fs.accessSync(gitconfig, fs.constants.R_OK);
+    mounts.push('-v', `${gitconfig}:${gitconfig}:ro`);
+  } catch {
+    // No .gitconfig — skip
+  }
+
+  return mounts;
+}
+
+/** Check if Docker is available on the system. */
+export async function isDockerAvailable(): Promise<boolean> {
+  try {
+    execFileSync('docker', ['info'], { encoding: 'utf8', timeout: 5000, stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
 }

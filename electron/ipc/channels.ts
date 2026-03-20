@@ -86,6 +86,9 @@ export enum IPC {
   AskAboutCode = 'ask_about_code',
   CancelAskAboutCode = 'cancel_ask_about_code',
 
+  // Docker
+  CheckDockerAvailable = 'check_docker_available',
+
   // Notifications
   ShowNotification = 'show_notification',
   NotificationClicked = 'notification_clicked',
