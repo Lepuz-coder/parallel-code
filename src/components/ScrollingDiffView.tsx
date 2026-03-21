@@ -221,8 +221,8 @@ function DiffLineView(props: {
       {props.highlightedHtml ? (
         <span
           style={{
-            'white-space': 'pre',
-            'overflow-x': 'auto',
+            'white-space': 'pre-wrap',
+            'overflow-wrap': 'break-word',
             'padding-right': '8px',
           }}
           // eslint-disable-next-line solid/no-innerhtml -- HTML from our own Shiki highlighter, safe
@@ -231,8 +231,8 @@ function DiffLineView(props: {
       ) : (
         <span
           style={{
-            'white-space': 'pre',
-            'overflow-x': 'auto',
+            'white-space': 'pre-wrap',
+            'overflow-wrap': 'break-word',
             'padding-right': '8px',
           }}
         >
