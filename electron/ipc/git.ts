@@ -192,12 +192,37 @@ async function getCurrentBranchName(repoRoot: string): Promise<string> {
   return stdout.trim();
 }
 
+/**
+ * Resolve a branch name to whichever ref is further ahead for comparisons:
+ * local branch or its remote-tracking counterpart.  Using the most advanced
+ * ref prevents diffs from showing files already present on the other side.
+ * Falls back to the bare name when no remote ref exists (local-only repos).
+ */
+async function resolveComparisonRef(repoRoot: string, branch: string): Promise<string> {
+  if (branch.includes('/')) return branch;
+  if (!(await remoteTrackingRefExists(repoRoot, branch))) return branch;
+
+  const remote = `origin/${branch}`;
+  try {
+    const { stdout } = await exec('git', ['rev-list', '--count', `${branch}..${remote}`], {
+      cwd: repoRoot,
+    });
+    const originAhead = parseInt(stdout.trim(), 10) || 0;
+    return originAhead > 0 ? remote : branch;
+  } catch {
+    return branch;
+  }
+}
+
 async function detectMergeBase(
   repoRoot: string,
   head?: string,
   baseBranch?: string,
 ): Promise<string> {
-  const mainBranch = baseBranch ?? (await detectMainBranch(repoRoot));
+  const mainBranch = await resolveComparisonRef(
+    repoRoot,
+    baseBranch ?? (await detectMainBranch(repoRoot)),
+  );
   const key = `${cacheKey(repoRoot)}:${mainBranch}`;
   const cached = mergeBaseCache.get(key);
   if (cached) {
@@ -673,7 +698,10 @@ export async function getAllFileDiffsFromBranch(
   branchName: string,
   baseBranch?: string,
 ): Promise<string> {
-  const mainBranch = baseBranch ?? (await detectMainBranch(projectRoot));
+  const mainBranch = await resolveComparisonRef(
+    projectRoot,
+    baseBranch ?? (await detectMainBranch(projectRoot)),
+  );
   try {
     const { stdout } = await exec('git', ['diff', '-U3', `${mainBranch}...${branchName}`], {
       cwd: projectRoot,
@@ -821,7 +849,10 @@ export async function getWorktreeStatus(
   });
   const hasUncommittedChanges = statusOut.trim().length > 0;
 
-  const mainBranch = baseBranch ?? (await detectMainBranch(worktreePath).catch(() => 'HEAD'));
+  const mainBranch = await resolveComparisonRef(
+    worktreePath,
+    baseBranch ?? (await detectMainBranch(worktreePath).catch(() => 'HEAD')),
+  );
   let hasCommittedChanges = false;
   try {
     const { stdout: logOut } = await exec('git', ['log', `${mainBranch}..HEAD`, '--oneline'], {
@@ -854,7 +885,10 @@ export async function checkMergeStatus(
   worktreePath: string,
   baseBranch?: string,
 ): Promise<{ main_ahead_count: number; conflicting_files: string[] }> {
-  const mainBranch = baseBranch ?? (await detectMainBranch(worktreePath));
+  const mainBranch = await resolveComparisonRef(
+    worktreePath,
+    baseBranch ?? (await detectMainBranch(worktreePath)),
+  );
 
   let mainAheadCount = 0;
   try {
@@ -895,9 +929,10 @@ export async function mergeTask(
 
   return withWorktreeLock(lockKey, async () => {
     const mainBranch = baseBranch ?? (await detectMainBranch(projectRoot));
+    const comparisonRef = await resolveComparisonRef(projectRoot, mainBranch);
     const { linesAdded, linesRemoved } = await computeBranchDiffStats(
       projectRoot,
-      mainBranch,
+      comparisonRef,
       branchName,
     );
 
@@ -912,7 +947,7 @@ export async function mergeTask(
 
     const originalBranch = await getCurrentBranchName(projectRoot).catch(() => null);
 
-    // Checkout main
+    // Checkout main (bare branch name, not remote-tracking ref)
     await exec('git', ['checkout', mainBranch], { cwd: projectRoot });
 
     const restoreBranch = async () => {
@@ -970,7 +1005,10 @@ export async function mergeTask(
 }
 
 export async function getBranchLog(worktreePath: string, baseBranch?: string): Promise<string> {
-  const mainBranch = baseBranch ?? (await detectMainBranch(worktreePath).catch(() => 'HEAD'));
+  const mainBranch = await resolveComparisonRef(
+    worktreePath,
+    baseBranch ?? (await detectMainBranch(worktreePath).catch(() => 'HEAD')),
+  );
   try {
     const { stdout } = await exec(
       'git',
@@ -991,7 +1029,10 @@ export async function getChangedFilesFromBranch(
   branchName: string,
   baseBranch?: string,
 ): Promise<ChangedFile[]> {
-  const mainBranch = baseBranch ?? (await detectMainBranch(projectRoot));
+  const mainBranch = await resolveComparisonRef(
+    projectRoot,
+    baseBranch ?? (await detectMainBranch(projectRoot)),
+  );
 
   let diffStr = '';
   try {
@@ -1030,7 +1071,10 @@ export async function getFileDiffFromBranch(
   filePath: string,
   baseBranch?: string,
 ): Promise<FileDiffResult> {
-  const mainBranch = baseBranch ?? (await detectMainBranch(projectRoot));
+  const mainBranch = await resolveComparisonRef(
+    projectRoot,
+    baseBranch ?? (await detectMainBranch(projectRoot)),
+  );
 
   let diff = '';
   try {
