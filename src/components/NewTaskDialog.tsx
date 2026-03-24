@@ -110,6 +110,9 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     if (!props.open) return;
 
     // Reset signals for a fresh dialog
+    // selectedProjectId must be reset to null so the branch-fetching effect
+    // re-triggers even when the same project is selected again on reopen.
+    setSelectedProjectId(null);
     setPrompt('');
     setName('');
     setError('');
