@@ -93,6 +93,9 @@ const ALLOWED_CHANNELS = new Set([
   // Notifications
   'show_notification',
   'notification_clicked',
+  // Filesystem
+  'read_directory',
+  'read_file_content',
 ]);
 
 function isAllowedChannel(channel) {

@@ -75,4 +75,8 @@ export enum IPC {
   // Notifications
   ShowNotification = 'show_notification',
   NotificationClicked = 'notification_clicked',
+
+  // Filesystem
+  ReadDirectory = 'read_directory',
+  ReadFileContent = 'read_file_content',
 }

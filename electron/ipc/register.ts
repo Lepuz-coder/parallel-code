@@ -29,6 +29,7 @@ import { saveAppState, loadAppState } from './persistence.js';
 import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
+import { readDirectory, readFileContent } from './filesystem.js';
 import path from 'path';
 import {
   assertString,
@@ -198,6 +199,18 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.CheckPathExists, (_e, args) => {
     validatePath(args.path, 'path');
     return fs.existsSync(args.path);
+  });
+
+  // --- Filesystem ---
+  ipcMain.handle(IPC.ReadDirectory, (_e, args) => {
+    validatePath(args.dirPath, 'dirPath');
+    return readDirectory(args.dirPath);
+  });
+  ipcMain.handle(IPC.ReadFileContent, (_e, args) => {
+    validatePath(args.filePath, 'filePath');
+    const maxBytes =
+      typeof args.maxBytes === 'number' && args.maxBytes > 0 ? args.maxBytes : undefined;
+    return readFileContent(args.filePath, maxBytes);
   });
 
   // --- Plan watcher cleanup ---
