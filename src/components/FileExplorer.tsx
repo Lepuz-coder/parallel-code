@@ -438,13 +438,19 @@ function ProjectFileTree(props: {
         }}
         onMouseEnter={(e) => {
           (e.currentTarget as HTMLElement).style.background = theme.bgHover;
-          const btn = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.remove-btn');
-          if (btn) btn.style.opacity = '1';
+          (e.currentTarget as HTMLElement)
+            .querySelectorAll<HTMLElement>('.remove-btn')
+            .forEach((b) => {
+              b.style.opacity = '1';
+            });
         }}
         onMouseLeave={(e) => {
           (e.currentTarget as HTMLElement).style.background = 'transparent';
-          const btn = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.remove-btn');
-          if (btn) btn.style.opacity = '0';
+          (e.currentTarget as HTMLElement)
+            .querySelectorAll<HTMLElement>('.remove-btn')
+            .forEach((b) => {
+              b.style.opacity = '0';
+            });
         }}
       >
         <span
@@ -464,10 +470,6 @@ function ProjectFileTree(props: {
           {isExpanded() ? <FolderOpenIcon /> : <FolderIcon />}
         </span>
         <span
-          onClick={(e) => {
-            e.stopPropagation();
-            props.onEdit(props.project);
-          }}
           style={{
             overflow: 'hidden',
             'text-overflow': 'ellipsis',
@@ -475,10 +477,37 @@ function ProjectFileTree(props: {
             flex: '1',
             'min-width': '0',
           }}
-          title="Click to edit project"
         >
           {props.project.name}
         </span>
+        {/* Edit button */}
+        <button
+          class="remove-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onEdit(props.project);
+          }}
+          title="Edit project"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: theme.fgSubtle,
+            cursor: 'pointer',
+            'font-size': sf(11),
+            'line-height': '1',
+            padding: '0 2px',
+            'flex-shrink': '0',
+            opacity: '0',
+            transition: 'opacity 0.15s',
+            display: 'flex',
+            'align-items': 'center',
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.25.25 0 0 0 .108-.064l6.286-6.286Z" />
+          </svg>
+        </button>
+        {/* Remove button */}
         <button
           class="remove-btn"
           onClick={(e) => {
