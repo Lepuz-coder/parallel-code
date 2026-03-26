@@ -2,21 +2,16 @@ import { createSignal, For, Show } from 'solid-js';
 import {
   store,
   pickAndAddProject,
-  removeProject,
-  removeProjectWithTasks,
   toggleNewTaskDialog,
   toggleSidebar,
   getPanelSize,
   setPanelSizes,
   toggleSettingsDialog,
-  isProjectMissing,
   loadProfile,
   deleteProfile,
   toggleSaveProfileDialog,
 } from '../store/store';
-import type { Project } from '../store/types';
 import { ConfirmDialog } from './ConfirmDialog';
-import { EditProjectDialog } from './EditProjectDialog';
 import { SaveProfileDialog } from './SaveProfileDialog';
 import { FileExplorer } from './FileExplorer';
 import { IconButton } from './IconButton';
@@ -30,8 +25,6 @@ const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_SIZE_KEY = 'sidebar:width';
 
 export function Sidebar() {
-  const [confirmRemove, setConfirmRemove] = createSignal<string | null>(null);
-  const [editingProject, setEditingProject] = createSignal<Project | null>(null);
   const [resizing, setResizing] = createSignal(false);
   const [confirmLoadProfile, setConfirmLoadProfile] = createSignal<string | null>(null);
   const [confirmDeleteProfile, setConfirmDeleteProfile] = createSignal<string | null>(null);
@@ -59,20 +52,6 @@ export function Sidebar() {
 
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }
-
-  function abbreviatePath(path: string): string {
-    // Handle Linux /home/user/... and macOS /Users/user/...
-    const prefixes = ['/home/', '/Users/'];
-    for (const prefix of prefixes) {
-      if (path.startsWith(prefix)) {
-        const rest = path.slice(prefix.length);
-        const slashIdx = rest.indexOf('/');
-        if (slashIdx !== -1) return '~' + rest.slice(slashIdx);
-        return '~';
-      }
-    }
-    return path;
   }
 
   return (
@@ -148,133 +127,6 @@ export function Sidebar() {
             />
           </div>
         </div>
-
-        {/* Projects section */}
-        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
-          <div
-            style={{
-              display: 'flex',
-              'align-items': 'center',
-              'justify-content': 'space-between',
-              padding: '0 2px',
-            }}
-          >
-            <label
-              style={{
-                'font-size': sf(11),
-                color: theme.fgMuted,
-                'text-transform': 'uppercase',
-                'letter-spacing': '0.05em',
-              }}
-            >
-              Projects
-            </label>
-            <IconButton
-              icon={
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
-                </svg>
-              }
-              onClick={() => pickAndAddProject()}
-              title="Add project"
-              size="sm"
-            />
-          </div>
-
-          <For each={store.projects}>
-            {(project) => (
-              <div
-                role="button"
-                tabIndex={0}
-                data-project-id={project.id}
-                onClick={() => setEditingProject(project)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') setEditingProject(project);
-                }}
-                style={{
-                  display: 'flex',
-                  'align-items': 'center',
-                  gap: '6px',
-                  padding: '4px 6px',
-                  'border-radius': '6px',
-                  background: isProjectMissing(project.id)
-                    ? `color-mix(in srgb, ${theme.warning} 8%, ${theme.bgInput})`
-                    : theme.bgInput,
-                  'font-size': sf(11),
-                  cursor: 'pointer',
-                  border:
-                    store.sidebarFocused && store.sidebarFocusedProjectId === project.id
-                      ? `1.5px solid var(--border-focus)`
-                      : '1.5px solid transparent',
-                }}
-              >
-                <div
-                  style={{
-                    width: '8px',
-                    height: '8px',
-                    'border-radius': '50%',
-                    background: project.color,
-                    'flex-shrink': '0',
-                  }}
-                />
-                <div style={{ flex: '1', 'min-width': '0', overflow: 'hidden' }}>
-                  <div
-                    style={{
-                      color: theme.fg,
-                      'font-weight': '500',
-                      'white-space': 'nowrap',
-                      overflow: 'hidden',
-                      'text-overflow': 'ellipsis',
-                    }}
-                  >
-                    {project.name}
-                  </div>
-                  <div
-                    style={{
-                      color: isProjectMissing(project.id) ? theme.warning : theme.fgSubtle,
-                      'font-size': sf(10),
-                      'white-space': 'nowrap',
-                      overflow: 'hidden',
-                      'text-overflow': 'ellipsis',
-                    }}
-                  >
-                    {isProjectMissing(project.id)
-                      ? 'Folder not found'
-                      : abbreviatePath(project.path)}
-                  </div>
-                </div>
-                <button
-                  class="icon-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setConfirmRemove(project.id);
-                  }}
-                  title="Remove project"
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: theme.fgSubtle,
-                    cursor: 'pointer',
-                    'font-size': sf(12),
-                    'line-height': '1',
-                    padding: '0 2px',
-                    'flex-shrink': '0',
-                  }}
-                >
-                  &times;
-                </button>
-              </div>
-            )}
-          </For>
-
-          <Show when={store.projects.length === 0}>
-            <span style={{ 'font-size': sf(10), color: theme.fgSubtle, padding: '0 2px' }}>
-              No projects linked yet.
-            </span>
-          </Show>
-        </div>
-
-        <div style={{ height: '1px', background: theme.border }} />
 
         {/* Profiles section */}
         <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
@@ -491,43 +343,6 @@ export function Sidebar() {
           }}
           onCancel={() => setConfirmDeleteProfile(null)}
         />
-
-        {/* Edit project dialog */}
-        <EditProjectDialog project={editingProject()} onClose={() => setEditingProject(null)} />
-
-        {/* Confirm remove project dialog */}
-        {(() => {
-          const id = confirmRemove();
-          const taskCount = id
-            ? [...store.taskOrder, ...store.collapsedTaskOrder].filter(
-                (tid) => store.tasks[tid]?.projectId === id,
-              ).length
-            : 0;
-          return (
-            <ConfirmDialog
-              open={id !== null}
-              title="Remove project?"
-              message={
-                taskCount > 0
-                  ? `This project has ${taskCount} open task(s). Removing it will also close all tasks, delete their worktrees and branches.`
-                  : 'Are you sure you want to remove this project?'
-              }
-              confirmLabel={taskCount > 0 ? 'Remove all' : 'Remove'}
-              danger
-              onConfirm={() => {
-                if (id) {
-                  if (taskCount > 0) {
-                    removeProjectWithTasks(id);
-                  } else {
-                    removeProject(id);
-                  }
-                }
-                setConfirmRemove(null);
-              }}
-              onCancel={() => setConfirmRemove(null)}
-            />
-          );
-        })()}
       </div>
       {/* Resize handle */}
       <div

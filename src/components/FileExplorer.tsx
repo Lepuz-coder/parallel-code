@@ -1,12 +1,20 @@
-import { createSignal, createMemo, onCleanup, For, Show, type JSX } from 'solid-js';
+import { createSignal, onCleanup, For, Show, type JSX } from 'solid-js';
 import { store } from '../store/core';
-import { openFileViewer } from '../store/store';
+import {
+  openFileViewer,
+  pickAndAddProject,
+  removeProject,
+  removeProjectWithTasks,
+} from '../store/store';
 import type { Project } from '../store/types';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
+import { EditProjectDialog } from './EditProjectDialog';
+import { ConfirmDialog } from './ConfirmDialog';
+import { IconButton } from './IconButton';
 
 interface DirEntry {
   name: string;
@@ -257,7 +265,11 @@ function FileTreeItem(props: {
 }
 
 // --- Project File Tree ---
-function ProjectFileTree(props: { project: Project }) {
+function ProjectFileTree(props: {
+  project: Project;
+  onRemove: (id: string) => void;
+  onEdit: (project: Project) => void;
+}) {
   const isExpanded = () => expandedPaths()[props.project.path] ?? false;
   const isLoading = () => loadingPaths()[props.project.path] ?? false;
   const children = () => dirCache()[props.project.path] ?? [];
@@ -300,9 +312,13 @@ function ProjectFileTree(props: { project: Project }) {
         }}
         onMouseEnter={(e) => {
           (e.currentTarget as HTMLElement).style.background = theme.bgHover;
+          const btn = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.remove-btn');
+          if (btn) btn.style.opacity = '1';
         }}
         onMouseLeave={(e) => {
           (e.currentTarget as HTMLElement).style.background = 'transparent';
+          const btn = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.remove-btn');
+          if (btn) btn.style.opacity = '0';
         }}
       >
         <span
@@ -322,6 +338,10 @@ function ProjectFileTree(props: { project: Project }) {
           {isExpanded() ? <FolderOpenIcon /> : <FolderIcon />}
         </span>
         <span
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onEdit(props.project);
+          }}
           style={{
             overflow: 'hidden',
             'text-overflow': 'ellipsis',
@@ -329,9 +349,32 @@ function ProjectFileTree(props: { project: Project }) {
             flex: '1',
             'min-width': '0',
           }}
+          title="Click to edit project"
         >
           {props.project.name}
         </span>
+        <button
+          class="remove-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onRemove(props.project.id);
+          }}
+          title="Remove project"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: theme.fgSubtle,
+            cursor: 'pointer',
+            'font-size': sf(12),
+            'line-height': '1',
+            padding: '0 2px',
+            'flex-shrink': '0',
+            opacity: '0',
+            transition: 'opacity 0.15s',
+          }}
+        >
+          &times;
+        </button>
       </div>
 
       {/* Children */}
@@ -375,6 +418,8 @@ export function FileExplorer() {
     { projectName: string; projectPath: string; results: SearchResult[] }[]
   >([]);
   const [searchingFlag, setSearchingFlag] = createSignal(false);
+  const [confirmRemove, setConfirmRemove] = createSignal<string | null>(null);
+  const [editingProject, setEditingProject] = createSignal<Project | null>(null);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
   function handleSearchInput(value: string): void {
@@ -386,7 +431,7 @@ export function FileExplorer() {
     }
     searchTimer = setTimeout(async () => {
       setSearchingFlag(true);
-      const projects = activeProjects();
+      const projects = store.projects;
       const allResults: {
         projectName: string;
         projectPath: string;
@@ -418,22 +463,8 @@ export function FileExplorer() {
     if (searchTimer) clearTimeout(searchTimer);
   });
 
-  // Only show projects that have active or collapsed tasks
-  const activeProjects = createMemo(() => {
-    const projectIdsWithTasks = new Set<string>();
-    for (const taskId of store.taskOrder) {
-      const task = store.tasks[taskId];
-      if (task) projectIdsWithTasks.add(task.projectId);
-    }
-    for (const taskId of store.collapsedTaskOrder) {
-      const task = store.tasks[taskId];
-      if (task) projectIdsWithTasks.add(task.projectId);
-    }
-    return store.projects.filter((p) => projectIdsWithTasks.has(p.id));
-  });
-
   return (
-    <Show when={activeProjects().length > 0}>
+    <>
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
         {/* Section header */}
         <div
@@ -467,8 +498,18 @@ export function FileExplorer() {
             >
               <ChevronDown />
             </span>
-            Explorer
+            Projects
           </label>
+          <IconButton
+            icon={
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
+              </svg>
+            }
+            onClick={() => pickAndAddProject()}
+            title="Add project"
+            size="sm"
+          />
         </div>
 
         <Show when={!collapsed()}>
@@ -588,8 +629,19 @@ export function FileExplorer() {
                 'min-height': '0',
               }}
             >
-              <For each={activeProjects()}>
-                {(project) => <ProjectFileTree project={project} />}
+              <Show when={store.projects.length === 0}>
+                <span style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '0 2px' }}>
+                  No projects linked yet.
+                </span>
+              </Show>
+              <For each={store.projects}>
+                {(project) => (
+                  <ProjectFileTree
+                    project={project}
+                    onRemove={(id) => setConfirmRemove(id)}
+                    onEdit={(p) => setEditingProject(p)}
+                  />
+                )}
               </For>
             </div>
           </Show>
@@ -606,6 +658,43 @@ export function FileExplorer() {
           />
         )}
       </Show>
-    </Show>
+
+      {/* Edit project dialog */}
+      <EditProjectDialog project={editingProject()} onClose={() => setEditingProject(null)} />
+
+      {/* Confirm remove project dialog */}
+      {(() => {
+        const id = confirmRemove();
+        const taskCount = id
+          ? [...store.taskOrder, ...store.collapsedTaskOrder].filter(
+              (tid) => store.tasks[tid]?.projectId === id,
+            ).length
+          : 0;
+        return (
+          <ConfirmDialog
+            open={id !== null}
+            title="Remove project?"
+            message={
+              taskCount > 0
+                ? `This project has ${taskCount} open task(s). Removing it will also close all tasks, delete their worktrees and branches.`
+                : 'Are you sure you want to remove this project?'
+            }
+            confirmLabel={taskCount > 0 ? 'Remove all' : 'Remove'}
+            danger
+            onConfirm={() => {
+              if (id) {
+                if (taskCount > 0) {
+                  removeProjectWithTasks(id);
+                } else {
+                  removeProject(id);
+                }
+              }
+              setConfirmRemove(null);
+            }}
+            onCancel={() => setConfirmRemove(null)}
+          />
+        );
+      })()}
+    </>
   );
 }
