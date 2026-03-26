@@ -76,6 +76,23 @@ export interface PersistedTerminal {
   name: string;
 }
 
+export interface ProfileTask {
+  name: string;
+  projectId: string;
+  agentDefId: string;
+}
+
+export interface ProfileTerminal {
+  name: string;
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  tasks: ProfileTask[];
+  terminals: ProfileTerminal[];
+}
+
 export interface PersistedWindowState {
   x: number;
   y: number;
@@ -109,6 +126,7 @@ export interface PersistedState {
   editorCommand?: string;
   dockerImage?: string;
   customAgents?: AgentDef[];
+  profiles?: Profile[];
 }
 
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
@@ -171,6 +189,8 @@ export interface AppStore {
   dockerImage: string;
   dockerAvailable: boolean;
   newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
+  profiles: Profile[];
+  showSaveProfileDialog: boolean;
   missingProjectIds: Record<string, true>;
   remoteAccess: RemoteAccess;
 }

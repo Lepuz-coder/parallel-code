@@ -28,6 +28,7 @@ function persistedSnapshot(): string {
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand,
     customAgents: store.customAgents,
+    profiles: store.profiles,
     tasks: Object.fromEntries(
       [...store.taskOrder, ...store.collapsedTaskOrder]
         .filter((id) => store.tasks[id])

@@ -11,6 +11,7 @@ import type {
   PersistedState,
   PersistedTask,
   PersistedWindowState,
+  Profile,
   Project,
 } from './types';
 import type { AgentDef } from '../ipc/types';
@@ -54,6 +55,7 @@ export async function saveState(): Promise<void> {
     editorCommand: store.editorCommand || undefined,
     dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
+    profiles: store.profiles.length > 0 ? store.profiles.map((p) => ({ ...p })) : undefined,
   };
 
   for (const taskId of store.taskOrder) {
@@ -182,6 +184,7 @@ interface LegacyPersistedState {
   dockerImage?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
+  profiles?: unknown;
 }
 
 export async function loadState(): Promise<void> {
@@ -300,6 +303,19 @@ export async function loadState(): Promise<void> {
             typeof (a as AgentDef).id === 'string' &&
             typeof (a as AgentDef).name === 'string' &&
             typeof (a as AgentDef).command === 'string',
+        );
+      }
+
+      // Restore profiles
+      if (Array.isArray(raw.profiles)) {
+        s.profiles = raw.profiles.filter(
+          (p: unknown): p is Profile =>
+            typeof p === 'object' &&
+            p !== null &&
+            typeof (p as Profile).id === 'string' &&
+            typeof (p as Profile).name === 'string' &&
+            Array.isArray((p as Profile).tasks) &&
+            Array.isArray((p as Profile).terminals),
         );
       }
 

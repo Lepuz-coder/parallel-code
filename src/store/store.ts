@@ -119,3 +119,10 @@ export {
   syncTerminalCounter,
 } from './terminals';
 export { startRemoteAccess, stopRemoteAccess, refreshRemoteStatus } from './remote';
+export {
+  saveCurrentAsProfile,
+  loadProfile,
+  deleteProfile,
+  renameProfile,
+  toggleSaveProfileDialog,
+} from './profiles';

@@ -43,6 +43,8 @@ export const [store, setStore] = createStore<AppStore>({
   editorCommand: '',
   dockerImage: 'parallel-code-agent:latest',
   dockerAvailable: false,
+  profiles: [],
+  showSaveProfileDialog: false,
   newTaskPrefillPrompt: null,
   missingProjectIds: {},
   remoteAccess: {
