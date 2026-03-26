@@ -816,30 +816,83 @@ export function FileExplorer() {
           {/* === PROJECTS TAB === */}
           <Show when={activeTab() === 'projects'}>
             {/* Search input */}
-            <input
-              type="text"
-              value={searchQuery()}
-              onInput={(e) => handleSearchInput(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setSearchQuery('');
-                  setSearchResults([]);
-                  (e.currentTarget as HTMLInputElement).blur();
-                }
-              }}
-              placeholder="Search files..."
+            <div
               style={{
-                background: theme.bgInput,
-                border: `1px solid ${theme.border}`,
-                'border-radius': '4px',
-                padding: '4px 8px',
-                color: theme.fg,
-                'font-size': sf(11),
-                outline: 'none',
-                'box-sizing': 'border-box',
-                width: '100%',
+                position: 'relative',
+                'flex-shrink': '0',
               }}
-            />
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 16 16"
+                fill={theme.fgSubtle}
+                style={{
+                  position: 'absolute',
+                  left: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  'pointer-events': 'none',
+                }}
+              >
+                <path d="M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Zm-.82 4.74a6 6 0 1 1 1.06-1.06l3.04 3.04a.75.75 0 1 1-1.06 1.06l-3.04-3.04Z" />
+              </svg>
+              <input
+                type="text"
+                value={searchQuery()}
+                onInput={(e) => handleSearchInput(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setSearchQuery('');
+                    setSearchResults([]);
+                    (e.currentTarget as HTMLInputElement).blur();
+                  }
+                }}
+                placeholder="Search files..."
+                style={{
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': '6px',
+                  padding: '5px 8px 5px 28px',
+                  color: theme.fg,
+                  'font-size': sf(12),
+                  outline: 'none',
+                  'box-sizing': 'border-box',
+                  width: '100%',
+                }}
+                onFocus={(e) => {
+                  (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-focus)';
+                }}
+                onBlur={(e) => {
+                  (e.currentTarget as HTMLElement).style.borderColor = theme.border;
+                }}
+              />
+              <Show when={searchQuery().trim()}>
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchResults([]);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: '6px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    color: theme.fgSubtle,
+                    cursor: 'pointer',
+                    padding: '0',
+                    'font-size': '14px',
+                    'line-height': '1',
+                    display: 'flex',
+                    'align-items': 'center',
+                  }}
+                >
+                  &times;
+                </button>
+              </Show>
+            </div>
 
             {/* Search results or tree view */}
             <Show
@@ -852,75 +905,139 @@ export function FileExplorer() {
                     overflow: 'auto',
                     flex: '1',
                     'min-height': '0',
+                    gap: '2px',
+                    'padding-top': '4px',
                   }}
                 >
                   <Show when={searchingFlag()}>
-                    <div style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '4px' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        'align-items': 'center',
+                        'justify-content': 'center',
+                        padding: '16px',
+                        color: theme.fgSubtle,
+                        'font-size': sf(12),
+                      }}
+                    >
                       Searching...
                     </div>
                   </Show>
                   <Show when={!searchingFlag() && searchResults().length === 0}>
-                    <div style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '4px' }}>
-                      No files found
+                    <div
+                      style={{
+                        display: 'flex',
+                        'flex-direction': 'column',
+                        'align-items': 'center',
+                        'justify-content': 'center',
+                        padding: '24px 8px',
+                        gap: '4px',
+                        color: theme.fgSubtle,
+                      }}
+                    >
+                      <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Zm-.82 4.74a6 6 0 1 1 1.06-1.06l3.04 3.04a.75.75 0 1 1-1.06 1.06l-3.04-3.04Z" />
+                      </svg>
+                      <span style={{ 'font-size': sf(12) }}>No files found</span>
                     </div>
                   </Show>
                   <For each={searchResults()}>
                     {(pr) => (
-                      <For each={pr.results}>
-                        {(item) => (
-                          <div
-                            onClick={() => {
-                              if (!item.isDirectory) {
-                                openFileViewer(
-                                  `${pr.projectPath}/${item.relativePath}`,
-                                  pr.projectPath,
-                                );
-                              }
-                            }}
-                            style={{
-                              display: 'flex',
-                              'align-items': 'center',
-                              gap: '4px',
-                              padding: '3px 4px',
-                              cursor: item.isDirectory ? 'default' : 'pointer',
-                              'border-radius': '4px',
-                              'font-size': sf(12),
-                              color: theme.fg,
-                              opacity: item.isDirectory ? '0.5' : '1',
-                              'white-space': 'nowrap',
-                              overflow: 'hidden',
-                              'text-overflow': 'ellipsis',
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!item.isDirectory)
-                                (e.currentTarget as HTMLElement).style.background = theme.bgHover;
-                            }}
-                            onMouseLeave={(e) => {
-                              (e.currentTarget as HTMLElement).style.background = 'transparent';
-                            }}
-                          >
-                            <span
-                              style={{
-                                'flex-shrink': '0',
-                                display: 'flex',
-                                'align-items': 'center',
-                              }}
-                            >
-                              {item.isDirectory ? <FolderIcon /> : <FileIcon />}
-                            </span>
-                            <span
-                              style={{
-                                overflow: 'hidden',
-                                'text-overflow': 'ellipsis',
-                                flex: '1',
-                                'min-width': '0',
-                              }}
-                            >
-                              {item.relativePath}
-                            </span>
-                          </div>
-                        )}
-                      </For>
+                      <>
+                        {/* Project header */}
+                        <div
+                          style={{
+                            'font-size': sf(10),
+                            color: theme.fgSubtle,
+                            'text-transform': 'uppercase',
+                            'letter-spacing': '0.05em',
+                            padding: '6px 4px 2px',
+                            'margin-top': '2px',
+                          }}
+                        >
+                          {pr.projectName}
+                        </div>
+                        <For each={pr.results}>
+                          {(item) => {
+                            const parts = item.relativePath.split('/');
+                            const fileName = parts[parts.length - 1];
+                            const dirPath = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+                            return (
+                              <div
+                                onClick={() => {
+                                  if (!item.isDirectory) {
+                                    openFileViewer(
+                                      `${pr.projectPath}/${item.relativePath}`,
+                                      pr.projectPath,
+                                    );
+                                    setSearchQuery('');
+                                    setSearchResults([]);
+                                  }
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  'align-items': 'center',
+                                  gap: '6px',
+                                  padding: '4px 6px',
+                                  cursor: item.isDirectory ? 'default' : 'pointer',
+                                  'border-radius': '4px',
+                                  color: theme.fg,
+                                  opacity: item.isDirectory ? '0.5' : '1',
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!item.isDirectory)
+                                    (e.currentTarget as HTMLElement).style.background =
+                                      theme.bgHover;
+                                }}
+                                onMouseLeave={(e) => {
+                                  (e.currentTarget as HTMLElement).style.background = 'transparent';
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    'flex-shrink': '0',
+                                    display: 'flex',
+                                    'align-items': 'center',
+                                  }}
+                                >
+                                  {item.isDirectory ? <FolderIcon /> : <FileIcon />}
+                                </span>
+                                <div
+                                  style={{
+                                    flex: '1',
+                                    'min-width': '0',
+                                    overflow: 'hidden',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      'font-size': sf(12),
+                                      'white-space': 'nowrap',
+                                      overflow: 'hidden',
+                                      'text-overflow': 'ellipsis',
+                                    }}
+                                  >
+                                    {fileName}
+                                  </div>
+                                  <Show when={dirPath}>
+                                    <div
+                                      style={{
+                                        'font-size': sf(10),
+                                        color: theme.fgSubtle,
+                                        'white-space': 'nowrap',
+                                        overflow: 'hidden',
+                                        'text-overflow': 'ellipsis',
+                                      }}
+                                    >
+                                      {dirPath}
+                                    </div>
+                                  </Show>
+                                </div>
+                              </div>
+                            );
+                          }}
+                        </For>
+                      </>
                     )}
                   </For>
                 </div>

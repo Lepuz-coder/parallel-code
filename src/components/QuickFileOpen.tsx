@@ -36,19 +36,8 @@ export function QuickFileOpen() {
     }
   });
 
-  // Active projects (those with tasks)
-  const activeProjects = () => {
-    const projectIdsWithTasks = new Set<string>();
-    for (const taskId of store.taskOrder) {
-      const task = store.tasks[taskId];
-      if (task) projectIdsWithTasks.add(task.projectId);
-    }
-    for (const taskId of store.collapsedTaskOrder) {
-      const task = store.tasks[taskId];
-      if (task) projectIdsWithTasks.add(task.projectId);
-    }
-    return store.projects.filter((p) => projectIdsWithTasks.has(p.id));
-  };
+  // All linked projects
+  const allProjects = () => store.projects;
 
   // Flat list for keyboard navigation
   const flatResults = () => {
@@ -77,7 +66,7 @@ export function QuickFileOpen() {
       return;
     }
     setSearching(true);
-    const projects = activeProjects();
+    const projects = allProjects();
     const allResults: ProjectResult[] = [];
 
     for (const project of projects) {

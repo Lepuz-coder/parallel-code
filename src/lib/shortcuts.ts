@@ -15,13 +15,23 @@ interface Shortcut {
 
 const shortcuts: Shortcut[] = [];
 
+function keyMatches(e: KeyboardEvent, key: string): boolean {
+  if (e.key.toLowerCase() === key.toLowerCase()) return true;
+  // Fallback: match via e.code for non-ASCII keyboard layouts
+  // e.g. on Turkish layout Cmd+Shift+P may produce a different e.key
+  if (key.length === 1 && /^[a-z]$/i.test(key)) {
+    return e.code.toLowerCase() === `key${key.toLowerCase()}`;
+  }
+  return false;
+}
+
 function matches(e: KeyboardEvent, s: Shortcut): boolean {
   const ctrlMatch = s.cmdOrCtrl ? e.ctrlKey || e.metaKey : !!e.ctrlKey === !!s.ctrl;
   // For non-cmdOrCtrl shortcuts, require metaKey to not be pressed
   const metaMatch = s.cmdOrCtrl || !e.metaKey;
 
   return (
-    e.key.toLowerCase() === s.key.toLowerCase() &&
+    keyMatches(e, s.key) &&
     ctrlMatch &&
     metaMatch &&
     !!e.altKey === !!s.alt &&
