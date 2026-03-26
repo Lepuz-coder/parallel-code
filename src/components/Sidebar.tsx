@@ -69,11 +69,13 @@ export function Sidebar() {
         style={{
           flex: '1',
           'min-width': '0',
+          'min-height': '0',
           display: 'flex',
           'flex-direction': 'column',
           padding: '16px',
           gap: '16px',
           'user-select': 'none',
+          overflow: 'hidden',
         }}
       >
         {/* Logo + collapse */}
@@ -242,11 +244,8 @@ export function Sidebar() {
 
         <div style={{ height: '1px', background: theme.border }} />
 
-        {/* File Explorer */}
+        {/* File Explorer — takes remaining space */}
         <FileExplorer />
-
-        {/* Spacer pushes button to bottom */}
-        <div style={{ flex: '1' }} />
 
         {/* New task / Link project button — pinned to bottom */}
         <Show

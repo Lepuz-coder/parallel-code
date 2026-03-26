@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, For, Show, type JSX } from 'solid-js';
+import { createSignal, createEffect, onCleanup, For, Show, type JSX } from 'solid-js';
 import { store } from '../store/core';
 import {
   openFileViewer,
@@ -32,6 +32,9 @@ const [dirCache, setDirCache] = createSignal<Record<string, DirEntry[]>>({});
 const [expandedPaths, setExpandedPaths] = createSignal<Record<string, boolean>>({});
 const [loadingPaths, setLoadingPaths] = createSignal<Record<string, boolean>>({});
 
+// Highlighted file (revealed from search/open)
+const [highlightedPath, setHighlightedPath] = createSignal<string | null>(null);
+
 // Context menu state
 const [contextMenu, setContextMenu] = createSignal<{
   x: number;
@@ -60,6 +63,47 @@ function toggleExpand(dirPath: string): void {
     setExpandedPaths((prev) => ({ ...prev, [dirPath]: true }));
     loadDirectory(dirPath);
   }
+}
+
+/**
+ * Expand all parent directories leading to `filePath`, load their contents,
+ * then highlight the file and scroll it into view.
+ */
+async function revealFileInTree(filePath: string, projectPath: string): Promise<void> {
+  // Build the list of ancestor directories that need to be expanded
+  // e.g. for "/proj/src/lib/foo.ts" with projectPath "/proj"
+  //   -> ["/proj", "/proj/src", "/proj/src/lib"]
+  const rel = filePath.startsWith(projectPath + '/')
+    ? filePath.slice(projectPath.length + 1)
+    : filePath.slice(projectPath.length);
+  const parts = rel.split('/').filter(Boolean);
+  // Last part is the file itself, the rest are directories
+  const dirs: string[] = [projectPath];
+  for (let i = 0; i < parts.length - 1; i++) {
+    dirs.push(dirs[dirs.length - 1] + '/' + parts[i]);
+  }
+
+  // Expand each directory and load its contents sequentially
+  const expanded: Record<string, boolean> = {};
+  for (const dir of dirs) {
+    expanded[dir] = true;
+    await loadDirectory(dir);
+  }
+  setExpandedPaths((prev) => ({ ...prev, ...expanded }));
+
+  // Highlight the file
+  setHighlightedPath(filePath);
+
+  // Scroll into view after DOM updates
+  requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLElement>(`[data-file-path="${CSS.escape(filePath)}"]`);
+    el?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  });
+
+  // Clear highlight after a few seconds
+  setTimeout(() => {
+    setHighlightedPath((prev) => (prev === filePath ? null : prev));
+  }, 3000);
 }
 
 function relativePath(filePath: string, projectPath: string): string {
@@ -153,9 +197,12 @@ function FileTreeItem(props: {
     });
   };
 
+  const isHighlighted = () => highlightedPath() === fullPath();
+
   return (
     <>
       <div
+        data-file-path={fullPath()}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         style={{
@@ -171,12 +218,17 @@ function FileTreeItem(props: {
           'white-space': 'nowrap',
           overflow: 'hidden',
           'text-overflow': 'ellipsis',
+          background: isHighlighted()
+            ? `color-mix(in srgb, ${theme.accent} 18%, transparent)`
+            : undefined,
+          'box-shadow': isHighlighted() ? `inset 2px 0 0 ${theme.accent}` : undefined,
+          transition: 'background 0.3s, box-shadow 0.3s',
         }}
         onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.background = theme.bgHover;
+          if (!isHighlighted()) (e.currentTarget as HTMLElement).style.background = theme.bgHover;
         }}
         onMouseLeave={(e) => {
-          (e.currentTarget as HTMLElement).style.background = 'transparent';
+          if (!isHighlighted()) (e.currentTarget as HTMLElement).style.background = 'transparent';
         }}
       >
         {/* Chevron for directories */}
@@ -422,6 +474,16 @@ export function FileExplorer() {
   const [editingProject, setEditingProject] = createSignal<Project | null>(null);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // Watch for file viewer changes and reveal the file in the tree
+  createEffect(() => {
+    const f = store.fileViewerFile;
+    if (f) {
+      setCollapsed(false);
+      // Don't await — fire and forget to avoid blocking the effect
+      void revealFileInTree(f.filePath, f.projectPath);
+    }
+  });
+
   function handleSearchInput(value: string): void {
     setSearchQuery(value);
     if (searchTimer) clearTimeout(searchTimer);
@@ -465,7 +527,16 @@ export function FileExplorer() {
 
   return (
     <>
-      <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
+      <div
+        style={{
+          display: 'flex',
+          'flex-direction': 'column',
+          gap: '4px',
+          flex: '1',
+          'min-height': '0',
+          overflow: 'hidden',
+        }}
+      >
         {/* Section header */}
         <div
           style={{
@@ -548,7 +619,7 @@ export function FileExplorer() {
                   display: 'flex',
                   'flex-direction': 'column',
                   overflow: 'auto',
-                  'flex-shrink': '1',
+                  flex: '1',
                   'min-height': '0',
                 }}
               >
@@ -625,7 +696,7 @@ export function FileExplorer() {
                 display: 'flex',
                 'flex-direction': 'column',
                 overflow: 'auto',
-                'flex-shrink': '1',
+                flex: '1',
                 'min-height': '0',
               }}
             >
