@@ -21,8 +21,8 @@ import { EditProjectDialog } from './EditProjectDialog';
 import { TaskTitleBar } from './TaskTitleBar';
 import { TaskBranchInfoBar } from './TaskBranchInfoBar';
 import { TaskNotesPanel } from './TaskNotesPanel';
-import { TaskShellSection } from './TaskShellSection';
 import { TaskAITerminal } from './TaskAITerminal';
+import { TaskTerminalSection } from './TaskTerminalSection';
 import { TaskClosingOverlay } from './TaskClosingOverlay';
 import { theme } from '../lib/theme';
 import type { Task } from '../store/types';
@@ -130,19 +130,6 @@ export function TaskPanel(props: TaskPanelProps) {
     };
   }
 
-  function shellSection(): PanelChild {
-    return {
-      id: 'shell-section',
-      initialSize: 28,
-      minSize: 28,
-      get fixed() {
-        return props.task.shellAgentIds.length === 0;
-      },
-      requestSize: () => (props.task.shellAgentIds.length > 0 ? 200 : 28),
-      content: () => <TaskShellSection task={props.task} isActive={props.isActive} />,
-    };
-  }
-
   function aiTerminal(): PanelChild {
     return {
       id: 'ai-terminal',
@@ -184,6 +171,19 @@ export function TaskPanel(props: TaskPanelProps) {
     };
   }
 
+  function terminalSection(): PanelChild {
+    return {
+      id: 'terminal-section',
+      initialSize: 32,
+      minSize: 32,
+      get fixed() {
+        return props.task.shellAgentIds.length === 0;
+      },
+      requestSize: () => (props.task.shellAgentIds.length > 0 ? 250 : 32),
+      content: () => <TaskTerminalSection task={props.task} isActive={props.isActive} />,
+    };
+  }
+
   const projectPath = () => getProject(props.task.projectId)?.path ?? '';
 
   return (
@@ -214,9 +214,9 @@ export function TaskPanel(props: TaskPanelProps) {
           titleBar(),
           branchInfoBar(),
           notesPanel(),
-          shellSection(),
           aiTerminal(),
           promptInput(),
+          terminalSection(),
         ]}
       />
       <CloseTaskDialog

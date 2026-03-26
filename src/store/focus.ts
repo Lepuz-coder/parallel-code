@@ -37,24 +37,29 @@ export function triggerAction(key: string): void {
 // The grid is built per-task based on its shell count:
 //
 //        col 0           col 1         col 2 ...
-// row 0: notes           changed-files
-// row 1: shell-toolbar:0   shell-toolbar:1  ...   (always present, one per button)
-// row 2: shell:0         shell:1       shell:2   (only if shells exist)
-// row 3: ai-terminal
-// row 4: prompt
+// row 0: title
+// row 1: notes           changed-files
+// row 2: ai-terminal
+// row 3: prompt
+// row 4: shell-toolbar:0   shell-toolbar:1  ...   (terminal tab bar)
+// row 5: shell:0         shell:1       shell:2   (only if shells exist)
 
 function buildGrid(panelId: string): string[][] {
   const task = store.tasks[panelId];
   if (task) {
     const bookmarkCount =
       store.projects.find((p) => p.id === task.projectId)?.terminalBookmarks?.length ?? 0;
-    const toolbarCols = Array.from({ length: 1 + bookmarkCount }, (_, i) => `shell-toolbar:${i}`);
-    const grid: string[][] = [['title'], ['notes', 'changed-files'], toolbarCols];
+    const toolbarCols = Array.from({ length: 2 + bookmarkCount }, (_, i) => `shell-toolbar:${i}`);
+    const grid: string[][] = [
+      ['title'],
+      ['notes', 'changed-files'],
+      ['ai-terminal'],
+      ['prompt'],
+      toolbarCols,
+    ];
     if (task.shellAgentIds.length > 0) {
       grid.push(task.shellAgentIds.map((_, i) => `shell:${i}`));
     }
-    grid.push(['ai-terminal']);
-    grid.push(['prompt']);
     return grid;
   }
 
