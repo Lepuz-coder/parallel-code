@@ -8,6 +8,7 @@ export {
   updateProject,
   getProjectPath,
   pickAndAddProject,
+  reorderProject,
   validateProjectPaths,
   relinkProject,
   isProjectMissing,

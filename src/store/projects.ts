@@ -67,6 +67,18 @@ export function updateProject(
   );
 }
 
+export function reorderProject(fromIndex: number, toIndex: number): void {
+  if (fromIndex === toIndex) return;
+  setStore(
+    produce((s) => {
+      const len = s.projects.length;
+      if (fromIndex < 0 || fromIndex >= len || toIndex < 0 || toIndex >= len) return;
+      const [moved] = s.projects.splice(fromIndex, 1);
+      s.projects.splice(toIndex, 0, moved);
+    }),
+  );
+}
+
 export function getProjectPath(projectId: string): string | undefined {
   return store.projects.find((p) => p.id === projectId)?.path;
 }

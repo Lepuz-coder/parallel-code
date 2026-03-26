@@ -5,6 +5,7 @@ import {
   pickAndAddProject,
   removeProject,
   removeProjectWithTasks,
+  reorderProject,
 } from '../store/store';
 import type { Project } from '../store/types';
 import { invoke } from '../lib/ipc';
@@ -34,6 +35,11 @@ const [loadingPaths, setLoadingPaths] = createSignal<Record<string, boolean>>({}
 
 // Highlighted file (revealed from search/open)
 const [highlightedPath, setHighlightedPath] = createSignal<string | null>(null);
+
+// Project drag-to-reorder state
+const [dragProjectId, setDragProjectId] = createSignal<string | null>(null);
+const [dropProjectIndex, setDropProjectIndex] = createSignal<number | null>(null);
+const DRAG_THRESHOLD = 5;
 
 // Context menu state
 const [contextMenu, setContextMenu] = createSignal<{
@@ -317,6 +323,53 @@ function FileTreeItem(props: {
 }
 
 // --- Project File Tree ---
+function handleProjectDragMouseDown(e: MouseEvent, projectId: string): void {
+  if (e.button !== 0) return;
+  const target = e.target as HTMLElement;
+  if (target.closest('button')) return;
+
+  const startY = e.clientY;
+  let dragging = false;
+
+  function computeDropIdx(clientY: number): number {
+    const rows = document.querySelectorAll<HTMLElement>('[data-project-drag-id]');
+    for (let i = 0; i < rows.length; i++) {
+      const rect = rows[i].getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) return i;
+    }
+    return rows.length;
+  }
+
+  function onMove(ev: MouseEvent): void {
+    if (!dragging && Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
+    if (!dragging) {
+      dragging = true;
+      setDragProjectId(projectId);
+    }
+    setDropProjectIndex(computeDropIdx(ev.clientY));
+  }
+
+  function onUp(): void {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+
+    if (dragging) {
+      const fromIdx = store.projects.findIndex((p) => p.id === projectId);
+      const toIdx = dropProjectIndex();
+      setDragProjectId(null);
+      setDropProjectIndex(null);
+
+      if (fromIdx !== -1 && toIdx !== null && fromIdx !== toIdx) {
+        const adjusted = toIdx > fromIdx ? toIdx - 1 : toIdx;
+        reorderProject(fromIdx, adjusted);
+      }
+    }
+  }
+
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+}
+
 function ProjectFileTree(props: {
   project: Project;
   onRemove: (id: string) => void;
@@ -345,22 +398,42 @@ function ProjectFileTree(props: {
     });
   };
 
+  const isDragged = () => dragProjectId() === props.project.id;
+  const projectIdx = () => store.projects.findIndex((p) => p.id === props.project.id);
+  const showDropBefore = () => {
+    const di = dropProjectIndex();
+    return dragProjectId() !== null && di === projectIdx() && dragProjectId() !== props.project.id;
+  };
+
   return (
-    <div>
+    <div data-project-drag-id={props.project.id}>
+      {/* Drop indicator line */}
+      <Show when={showDropBefore()}>
+        <div
+          style={{
+            height: '2px',
+            background: theme.accent,
+            'border-radius': '1px',
+            margin: '1px 0',
+          }}
+        />
+      </Show>
       {/* Project root row */}
       <div
         onClick={handleToggle}
         onContextMenu={handleContextMenu}
+        onMouseDown={(e) => handleProjectDragMouseDown(e, props.project.id)}
         style={{
           display: 'flex',
           'align-items': 'center',
           gap: '4px',
           padding: '3px 4px',
-          cursor: 'pointer',
+          cursor: isDragged() ? 'grabbing' : 'pointer',
           'border-radius': '4px',
           'font-size': sf(11),
           'font-weight': '600',
           color: theme.fg,
+          opacity: isDragged() ? '0.4' : '1',
         }}
         onMouseEnter={(e) => {
           (e.currentTarget as HTMLElement).style.background = theme.bgHover;
@@ -714,6 +787,17 @@ export function FileExplorer() {
                   />
                 )}
               </For>
+              {/* Trailing drop indicator */}
+              <Show when={dragProjectId() !== null && dropProjectIndex() === store.projects.length}>
+                <div
+                  style={{
+                    height: '2px',
+                    background: theme.accent,
+                    'border-radius': '1px',
+                    margin: '1px 0',
+                  }}
+                />
+              </Show>
             </div>
           </Show>
         </Show>
