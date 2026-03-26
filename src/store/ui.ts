@@ -120,3 +120,19 @@ export function setWindowState(windowState: PersistedWindowState): void {
   }
   setStore('windowState', windowState);
 }
+
+// --- File Viewer ---
+
+export function openFileViewer(filePath: string, projectPath: string): void {
+  setStore('fileViewerFile', { filePath, projectPath });
+}
+
+export function closeFileViewer(): void {
+  setStore('fileViewerFile', null);
+}
+
+// --- Quick File Open ---
+
+export function toggleQuickFileOpen(show?: boolean): void {
+  setStore('showQuickFileOpen', show ?? !store.showQuickFileOpen);
+}

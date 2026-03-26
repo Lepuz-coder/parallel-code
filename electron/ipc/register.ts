@@ -29,7 +29,7 @@ import { saveAppState, loadAppState } from './persistence.js';
 import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
-import { readDirectory, readFileContent } from './filesystem.js';
+import { readDirectory, readFileContent, writeFileContent, searchFiles } from './filesystem.js';
 import path from 'path';
 import {
   assertString,
@@ -211,6 +211,16 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const maxBytes =
       typeof args.maxBytes === 'number' && args.maxBytes > 0 ? args.maxBytes : undefined;
     return readFileContent(args.filePath, maxBytes);
+  });
+  ipcMain.handle(IPC.WriteFileContent, (_e, args) => {
+    validatePath(args.filePath, 'filePath');
+    assertString(args.content, 'content');
+    return writeFileContent(args.filePath, args.content);
+  });
+  ipcMain.handle(IPC.SearchFiles, (_e, args) => {
+    validatePath(args.rootPath, 'rootPath');
+    assertString(args.query, 'query');
+    return searchFiles(args.rootPath, args.query);
   });
 
   // --- Plan watcher cleanup ---

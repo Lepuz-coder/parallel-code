@@ -59,6 +59,51 @@ export function readDirectory(dirPath: string): DirEntry[] {
   return result;
 }
 
+export interface SearchResult {
+  relativePath: string;
+  isDirectory: boolean;
+}
+
+export function searchFiles(rootPath: string, query: string, maxResults = 50): SearchResult[] {
+  const lowerQuery = query.toLowerCase();
+  const results: SearchResult[] = [];
+  const maxDepth = 10;
+
+  function walk(dirPath: string, depth: number): void {
+    if (depth > maxDepth || results.length >= maxResults) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (results.length >= maxResults) return;
+      if (IGNORED_NAMES.has(entry.name)) continue;
+      if (entry.name.startsWith('.')) continue;
+
+      const fullPath = path.join(dirPath, entry.name);
+      const relPath = path.relative(rootPath, fullPath);
+      const isDir = entry.isDirectory();
+
+      if (relPath.toLowerCase().includes(lowerQuery)) {
+        results.push({ relativePath: relPath, isDirectory: isDir });
+      }
+
+      if (isDir) {
+        walk(fullPath, depth + 1);
+      }
+    }
+  }
+
+  walk(rootPath, 0);
+  return results;
+}
+
+export function writeFileContent(filePath: string, content: string): void {
+  fs.writeFileSync(filePath, content, 'utf-8');
+}
+
 export function readFileContent(
   filePath: string,
   maxBytes: number = DEFAULT_MAX_BYTES,

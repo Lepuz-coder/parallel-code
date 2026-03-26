@@ -10,6 +10,7 @@ import { TilingLayout } from './components/TilingLayout';
 import { NewTaskDialog } from './components/NewTaskDialog';
 import { HelpDialog } from './components/HelpDialog';
 import { SettingsDialog } from './components/SettingsDialog';
+import { QuickFileOpen } from './components/QuickFileOpen';
 import { WindowTitleBar } from './components/WindowTitleBar';
 import { WindowResizeHandles } from './components/WindowResizeHandles';
 import { theme } from './lib/theme';
@@ -40,6 +41,7 @@ import {
   validateProjectPaths,
   setPlanContent,
   setDockerAvailable,
+  toggleQuickFileOpen,
 } from './store/store';
 import type { PersistedWindowState } from './store/types';
 import { registerShortcut, initShortcuts } from './lib/shortcuts';
@@ -374,6 +376,14 @@ function App() {
     });
     registerShortcut({ key: 'b', cmdOrCtrl: true, handler: () => toggleSidebar() });
     registerShortcut({
+      key: 'p',
+      cmdOrCtrl: true,
+      shift: true,
+      global: true,
+      dialogSafe: true,
+      handler: () => toggleQuickFileOpen(),
+    });
+    registerShortcut({
       key: '/',
       cmdOrCtrl: true,
       global: true,
@@ -553,6 +563,7 @@ function App() {
         <Show when={!isMac}>
           <WindowResizeHandles />
         </Show>
+        <QuickFileOpen />
         <HelpDialog open={store.showHelpDialog} onClose={() => toggleHelpDialog(false)} />
         <SettingsDialog
           open={store.showSettingsDialog}

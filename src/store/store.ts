@@ -94,6 +94,9 @@ export {
   setDockerImage,
   setDockerAvailable,
   setWindowState,
+  openFileViewer,
+  closeFileViewer,
+  toggleQuickFileOpen,
 } from './ui';
 export {
   getTaskDotStatus,

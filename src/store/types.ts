@@ -193,4 +193,6 @@ export interface AppStore {
   showSaveProfileDialog: boolean;
   missingProjectIds: Record<string, true>;
   remoteAccess: RemoteAccess;
+  fileViewerFile: { filePath: string; projectPath: string } | null;
+  showQuickFileOpen: boolean;
 }

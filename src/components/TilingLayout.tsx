@@ -4,6 +4,7 @@ import { closeTask } from '../store/tasks';
 import { ResizablePanel, type PanelChild, type ResizablePanelHandle } from './ResizablePanel';
 import { TaskPanel } from './TaskPanel';
 import { TerminalPanel } from './TerminalPanel';
+import { FileViewerPanel } from './FileViewerPanel';
 import { NewTaskPlaceholder } from './NewTaskPlaceholder';
 import { theme } from '../lib/theme';
 import { mod } from '../lib/platform';
@@ -42,114 +43,152 @@ export function TilingLayout() {
       if (!currentIds.has(key)) panelCache.delete(key);
     }
 
-    const panels: PanelChild[] = store.taskOrder.map((panelId) => {
-      let cached = panelCache.get(panelId);
-      if (!cached) {
-        cached = {
-          id: panelId,
-          initialSize: 520,
+    // File viewer panel (prepended when a file is open)
+    if (store.fileViewerFile) {
+      currentIds.add('__file_viewer');
+      let fvCached = panelCache.get('__file_viewer');
+      if (!fvCached) {
+        fvCached = {
+          id: '__file_viewer',
+          initialSize: 500,
           minSize: 300,
-          content: () => {
-            const task = store.tasks[panelId];
-            const terminal = store.terminals[panelId];
-            // eslint-disable-next-line solid/components-return-once
-            if (!task && !terminal) return <div />;
-            return (
-              <div
-                data-task-id={panelId}
-                class={
-                  task?.closingStatus === 'removing' || terminal?.closingStatus === 'removing'
-                    ? 'task-removing'
-                    : 'task-appearing'
-                }
-                style={{ height: '100%', padding: '6px 3px', 'box-sizing': 'border-box' }}
-                onAnimationEnd={(e) => {
-                  if (e.animationName === 'taskAppear')
-                    e.currentTarget.classList.remove('task-appearing');
-                }}
-              >
-                <ErrorBoundary
-                  fallback={(err, reset) => (
-                    <div
-                      style={{
-                        height: '100%',
-                        display: 'flex',
-                        'flex-direction': 'column',
-                        'align-items': 'center',
-                        'justify-content': 'center',
-                        gap: '12px',
-                        padding: '24px',
-                        background: theme.islandBg,
-                        'border-radius': '12px',
-                        border: `1px solid ${theme.border}`,
-                        color: theme.fgMuted,
-                        'font-size': '13px',
-                      }}
-                    >
-                      <div style={{ color: theme.error, 'font-weight': '600' }}>Panel crashed</div>
+          content: () => (
+            <div
+              data-task-id="__file_viewer"
+              style={{ height: '100%', padding: '6px 3px', 'box-sizing': 'border-box' }}
+            >
+              <FileViewerPanel />
+            </div>
+          ),
+        };
+        panelCache.set('__file_viewer', fvCached);
+      }
+    }
+
+    const panels: PanelChild[] = [];
+
+    // Add file viewer first if open
+    const fvPanel = panelCache.get('__file_viewer');
+    if (store.fileViewerFile && fvPanel) {
+      panels.push(fvPanel);
+    }
+
+    // Then add task/terminal panels
+    panels.push(
+      ...store.taskOrder.map((panelId) => {
+        let cached = panelCache.get(panelId);
+        if (!cached) {
+          cached = {
+            id: panelId,
+            initialSize: 520,
+            minSize: 300,
+            content: () => {
+              const task = store.tasks[panelId];
+              const terminal = store.terminals[panelId];
+              // eslint-disable-next-line solid/components-return-once
+              if (!task && !terminal) return <div />;
+              return (
+                <div
+                  data-task-id={panelId}
+                  class={
+                    task?.closingStatus === 'removing' || terminal?.closingStatus === 'removing'
+                      ? 'task-removing'
+                      : 'task-appearing'
+                  }
+                  style={{ height: '100%', padding: '6px 3px', 'box-sizing': 'border-box' }}
+                  onAnimationEnd={(e) => {
+                    if (e.animationName === 'taskAppear')
+                      e.currentTarget.classList.remove('task-appearing');
+                  }}
+                >
+                  <ErrorBoundary
+                    fallback={(err, reset) => (
                       <div
                         style={{
-                          'text-align': 'center',
-                          'word-break': 'break-word',
-                          'max-width': '300px',
+                          height: '100%',
+                          display: 'flex',
+                          'flex-direction': 'column',
+                          'align-items': 'center',
+                          'justify-content': 'center',
+                          gap: '12px',
+                          padding: '24px',
+                          background: theme.islandBg,
+                          'border-radius': '12px',
+                          border: `1px solid ${theme.border}`,
+                          color: theme.fgMuted,
+                          'font-size': '13px',
                         }}
                       >
-                        {String(err)}
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          onClick={reset}
+                        <div style={{ color: theme.error, 'font-weight': '600' }}>
+                          Panel crashed
+                        </div>
+                        <div
                           style={{
-                            background: theme.bgElevated,
-                            border: `1px solid ${theme.border}`,
-                            color: theme.fg,
-                            padding: '6px 16px',
-                            'border-radius': '6px',
-                            cursor: 'pointer',
+                            'text-align': 'center',
+                            'word-break': 'break-word',
+                            'max-width': '300px',
                           }}
                         >
-                          Retry
-                        </button>
-                        <button
-                          onClick={() => {
-                            const task = store.tasks[panelId];
-                            if (task) {
-                              const msg =
-                                'Close this task? Running agents and shells will be stopped.';
-                              if (window.confirm(msg)) closeTask(panelId);
-                            } else if (store.terminals[panelId]) {
-                              closeTerminal(panelId);
-                            }
-                          }}
-                          style={{
-                            background: theme.bgElevated,
-                            border: `1px solid ${theme.border}`,
-                            color: theme.error,
-                            padding: '6px 16px',
-                            'border-radius': '6px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {store.tasks[panelId] ? 'Close Task' : 'Close Terminal'}
-                        </button>
+                          {String(err)}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={reset}
+                            style={{
+                              background: theme.bgElevated,
+                              border: `1px solid ${theme.border}`,
+                              color: theme.fg,
+                              padding: '6px 16px',
+                              'border-radius': '6px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Retry
+                          </button>
+                          <button
+                            onClick={() => {
+                              const task = store.tasks[panelId];
+                              if (task) {
+                                const msg =
+                                  'Close this task? Running agents and shells will be stopped.';
+                                if (window.confirm(msg)) closeTask(panelId);
+                              } else if (store.terminals[panelId]) {
+                                closeTerminal(panelId);
+                              }
+                            }}
+                            style={{
+                              background: theme.bgElevated,
+                              border: `1px solid ${theme.border}`,
+                              color: theme.error,
+                              padding: '6px 16px',
+                              'border-radius': '6px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {store.tasks[panelId] ? 'Close Task' : 'Close Terminal'}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                >
-                  {task ? (
-                    <TaskPanel task={task} isActive={store.activeTaskId === panelId} />
-                  ) : terminal ? (
-                    <TerminalPanel terminal={terminal} isActive={store.activeTaskId === panelId} />
-                  ) : null}
-                </ErrorBoundary>
-              </div>
-            );
-          },
-        };
-        panelCache.set(panelId, cached);
-      }
-      return cached;
-    });
+                    )}
+                  >
+                    {task ? (
+                      <TaskPanel task={task} isActive={store.activeTaskId === panelId} />
+                    ) : terminal ? (
+                      <TerminalPanel
+                        terminal={terminal}
+                        isActive={store.activeTaskId === panelId}
+                      />
+                    ) : null}
+                  </ErrorBoundary>
+                </div>
+              );
+            },
+          };
+          panelCache.set(panelId, cached);
+        }
+        return cached;
+      }),
+    );
 
     let placeholder = panelCache.get('__placeholder');
     if (!placeholder) {

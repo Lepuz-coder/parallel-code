@@ -96,6 +96,8 @@ const ALLOWED_CHANNELS = new Set([
   // Filesystem
   'read_directory',
   'read_file_content',
+  'search_files',
+  'write_file_content',
 ]);
 
 function isAllowedChannel(channel) {

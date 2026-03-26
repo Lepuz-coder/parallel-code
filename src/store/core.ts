@@ -47,6 +47,8 @@ export const [store, setStore] = createStore<AppStore>({
   showSaveProfileDialog: false,
   newTaskPrefillPrompt: null,
   missingProjectIds: {},
+  fileViewerFile: null,
+  showQuickFileOpen: false,
   remoteAccess: {
     enabled: false,
     token: null,

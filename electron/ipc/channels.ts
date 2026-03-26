@@ -79,4 +79,6 @@ export enum IPC {
   // Filesystem
   ReadDirectory = 'read_directory',
   ReadFileContent = 'read_file_content',
+  SearchFiles = 'search_files',
+  WriteFileContent = 'write_file_content',
 }
