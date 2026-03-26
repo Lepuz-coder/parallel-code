@@ -76,6 +76,11 @@ export enum IPC {
   ShowNotification = 'show_notification',
   NotificationClicked = 'notification_clicked',
 
+  // Git
+  FindGitRepos = 'find_git_repos',
+  GetChangedFiles = 'get_changed_files',
+  GetFileDiff = 'get_file_diff',
+
   // Filesystem
   ReadDirectory = 'read_directory',
   ReadFileContent = 'read_file_content',

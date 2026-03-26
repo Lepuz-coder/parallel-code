@@ -93,6 +93,8 @@ const ALLOWED_CHANNELS = new Set([
   // Notifications
   'show_notification',
   'notification_clicked',
+  // Git
+  'find_git_repos',
   // Filesystem
   'read_directory',
   'read_file_content',

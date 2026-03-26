@@ -2,6 +2,7 @@ import { createSignal, createEffect, onCleanup, For, Show, type JSX } from 'soli
 import { store } from '../store/core';
 import {
   openFileViewer,
+  openFileDiff,
   pickAndAddProject,
   removeProject,
   removeProjectWithTasks,
@@ -536,7 +537,49 @@ function ProjectFileTree(props: {
 }
 
 // --- Main File Explorer ---
+// --- Git Diff types ---
+interface ChangedFile {
+  path: string;
+  status: string;
+}
+
+interface RepoChanges {
+  repoPath: string;
+  repoName: string;
+  projectPath: string;
+  files: ChangedFile[];
+}
+
+function detectLanguage(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  const langMap: Record<string, string> = {
+    ts: 'typescript',
+    tsx: 'typescript',
+    js: 'javascript',
+    jsx: 'javascript',
+    json: 'json',
+    html: 'html',
+    css: 'css',
+    scss: 'scss',
+    md: 'markdown',
+    py: 'python',
+    rs: 'rust',
+    go: 'go',
+    java: 'java',
+    c: 'c',
+    cpp: 'cpp',
+    sh: 'shell',
+    yaml: 'yaml',
+    yml: 'yaml',
+    toml: 'toml',
+    xml: 'xml',
+    sql: 'sql',
+  };
+  return langMap[ext] || 'plaintext';
+}
+
 export function FileExplorer() {
+  const [activeTab, setActiveTab] = createSignal<'projects' | 'gitdiff'>('projects');
   const [collapsed, setCollapsed] = createSignal(false);
   const [searchQuery, setSearchQuery] = createSignal('');
   const [searchResults, setSearchResults] = createSignal<
@@ -545,17 +588,83 @@ export function FileExplorer() {
   const [searchingFlag, setSearchingFlag] = createSignal(false);
   const [confirmRemove, setConfirmRemove] = createSignal<string | null>(null);
   const [editingProject, setEditingProject] = createSignal<Project | null>(null);
+
+  // Git diff state
+  const [gitChanges, setGitChanges] = createSignal<RepoChanges[]>([]);
+  const [gitLoading, setGitLoading] = createSignal(false);
+  const [expandedRepos, setExpandedRepos] = createSignal<Record<string, boolean>>({});
+
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Watch for file viewer changes and reveal the file in the tree
   createEffect(() => {
     const f = store.fileViewerFile;
-    if (f) {
+    if (f && !f.diffMode) {
+      setActiveTab('projects');
       setCollapsed(false);
-      // Don't await — fire and forget to avoid blocking the effect
       void revealFileInTree(f.filePath, f.projectPath);
     }
   });
+
+  // Load git changes when switching to git diff tab
+  createEffect(() => {
+    if (activeTab() === 'gitdiff') {
+      void loadGitChanges();
+    }
+  });
+
+  async function loadGitChanges(): Promise<void> {
+    setGitLoading(true);
+    const allChanges: RepoChanges[] = [];
+    for (const project of store.projects) {
+      try {
+        const repos = await invoke<string[]>(IPC.FindGitRepos, { projectPath: project.path });
+        for (const repoPath of repos) {
+          const files = await invoke<ChangedFile[]>(IPC.GetChangedFiles, { repoPath });
+          if (files.length > 0) {
+            const repoName = repoPath.split('/').pop() ?? repoPath;
+            allChanges.push({ repoPath, repoName, projectPath: project.path, files });
+            // Auto-expand repos with changes
+            setExpandedRepos((prev) => ({ ...prev, [repoPath]: true }));
+          }
+        }
+      } catch {
+        // skip projects that fail
+      }
+    }
+    setGitChanges(allChanges);
+    setGitLoading(false);
+  }
+
+  async function handleDiffClick(
+    repoPath: string,
+    projectPath: string,
+    filePath: string,
+  ): Promise<void> {
+    try {
+      const result = await invoke<{ oldContent: string; newContent: string }>(IPC.GetFileDiff, {
+        repoPath,
+        filePath,
+      });
+      const fullPath = `${repoPath}/${filePath}`;
+      const lang = detectLanguage(filePath);
+      openFileDiff(fullPath, projectPath, result.oldContent, result.newContent, lang);
+    } catch (err) {
+      console.error('Failed to get diff:', err);
+    }
+  }
+
+  function statusColor(status: string): string {
+    if (status === 'M') return theme.warning;
+    if (status === 'A' || status === '??') return theme.success;
+    if (status === 'D') return theme.error;
+    return theme.fgMuted;
+  }
+
+  function statusLabel(status: string): string {
+    if (status === '??') return 'U';
+    return status;
+  }
 
   function handleSearchInput(value: string): void {
     setSearchQuery(value);
@@ -610,83 +719,213 @@ export function FileExplorer() {
           overflow: 'hidden',
         }}
       >
-        {/* Section header */}
+        {/* Tab header */}
         <div
           style={{
             display: 'flex',
             'align-items': 'center',
-            'justify-content': 'space-between',
             padding: '0 2px',
+            gap: '0',
           }}
         >
-          <label
+          {/* Collapse chevron */}
+          <span
             onClick={() => setCollapsed((c) => !c)}
             style={{
+              display: 'inline-flex',
+              cursor: 'pointer',
+              padding: '0 2px',
+              color: theme.fgSubtle,
+              transition: 'transform 0.15s ease',
+              transform: collapsed() ? 'rotate(-90deg)' : 'rotate(0deg)',
+            }}
+          >
+            <ChevronDown />
+          </span>
+
+          {/* Tabs */}
+          <span
+            onClick={() => {
+              setActiveTab('projects');
+              setCollapsed(false);
+            }}
+            style={{
               'font-size': sf(11),
-              color: theme.fgMuted,
+              color: activeTab() === 'projects' ? theme.fg : theme.fgMuted,
               'text-transform': 'uppercase',
               'letter-spacing': '0.05em',
               cursor: 'pointer',
-              display: 'flex',
-              'align-items': 'center',
-              gap: '4px',
               'user-select': 'none',
+              padding: '2px 6px',
+              'border-bottom':
+                activeTab() === 'projects' ? `2px solid ${theme.accent}` : '2px solid transparent',
             }}
           >
-            <span
-              style={{
-                display: 'inline-flex',
-                transition: 'transform 0.15s ease',
-                transform: collapsed() ? 'rotate(-90deg)' : 'rotate(0deg)',
-              }}
-            >
-              <ChevronDown />
-            </span>
             Projects
-          </label>
-          <IconButton
-            icon={
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
-              </svg>
-            }
-            onClick={() => pickAndAddProject()}
-            title="Add project"
-            size="sm"
-          />
+          </span>
+          <span
+            onClick={() => {
+              setActiveTab('gitdiff');
+              setCollapsed(false);
+            }}
+            style={{
+              'font-size': sf(11),
+              color: activeTab() === 'gitdiff' ? theme.fg : theme.fgMuted,
+              'text-transform': 'uppercase',
+              'letter-spacing': '0.05em',
+              cursor: 'pointer',
+              'user-select': 'none',
+              padding: '2px 6px',
+              'border-bottom':
+                activeTab() === 'gitdiff' ? `2px solid ${theme.accent}` : '2px solid transparent',
+            }}
+          >
+            Git Diff
+          </span>
+
+          <div style={{ flex: '1' }} />
+
+          {/* Actions — context-dependent */}
+          <Show when={activeTab() === 'projects'}>
+            <IconButton
+              icon={
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
+                </svg>
+              }
+              onClick={() => pickAndAddProject()}
+              title="Add project"
+              size="sm"
+            />
+          </Show>
+          <Show when={activeTab() === 'gitdiff'}>
+            <IconButton
+              icon={
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 2.004a.75.75 0 0 1 .533.217l2.5 2.4a.75.75 0 1 1-1.066 1.058L8.75 4.49V10a.75.75 0 0 1-1.5 0V4.49L6.033 5.679a.75.75 0 0 1-1.066-1.058l2.5-2.4A.75.75 0 0 1 8 2.004ZM3.75 12.5a.75.75 0 0 1 0-1.5h8.5a.75.75 0 0 1 0 1.5h-8.5Z" />
+                </svg>
+              }
+              onClick={() => void loadGitChanges()}
+              title="Refresh git changes"
+              size="sm"
+            />
+          </Show>
         </div>
 
         <Show when={!collapsed()}>
-          {/* Search input */}
-          <input
-            type="text"
-            value={searchQuery()}
-            onInput={(e) => handleSearchInput(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setSearchQuery('');
-                setSearchResults([]);
-                (e.currentTarget as HTMLInputElement).blur();
-              }
-            }}
-            placeholder="Search files..."
-            style={{
-              background: theme.bgInput,
-              border: `1px solid ${theme.border}`,
-              'border-radius': '4px',
-              padding: '4px 8px',
-              color: theme.fg,
-              'font-size': sf(11),
-              outline: 'none',
-              'box-sizing': 'border-box',
-              width: '100%',
-            }}
-          />
+          {/* === PROJECTS TAB === */}
+          <Show when={activeTab() === 'projects'}>
+            {/* Search input */}
+            <input
+              type="text"
+              value={searchQuery()}
+              onInput={(e) => handleSearchInput(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchQuery('');
+                  setSearchResults([]);
+                  (e.currentTarget as HTMLInputElement).blur();
+                }
+              }}
+              placeholder="Search files..."
+              style={{
+                background: theme.bgInput,
+                border: `1px solid ${theme.border}`,
+                'border-radius': '4px',
+                padding: '4px 8px',
+                color: theme.fg,
+                'font-size': sf(11),
+                outline: 'none',
+                'box-sizing': 'border-box',
+                width: '100%',
+              }}
+            />
 
-          {/* Search results or tree view */}
-          <Show
-            when={!searchQuery().trim()}
-            fallback={
+            {/* Search results or tree view */}
+            <Show
+              when={!searchQuery().trim()}
+              fallback={
+                <div
+                  style={{
+                    display: 'flex',
+                    'flex-direction': 'column',
+                    overflow: 'auto',
+                    flex: '1',
+                    'min-height': '0',
+                  }}
+                >
+                  <Show when={searchingFlag()}>
+                    <div style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '4px' }}>
+                      Searching...
+                    </div>
+                  </Show>
+                  <Show when={!searchingFlag() && searchResults().length === 0}>
+                    <div style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '4px' }}>
+                      No files found
+                    </div>
+                  </Show>
+                  <For each={searchResults()}>
+                    {(pr) => (
+                      <For each={pr.results}>
+                        {(item) => (
+                          <div
+                            onClick={() => {
+                              if (!item.isDirectory) {
+                                openFileViewer(
+                                  `${pr.projectPath}/${item.relativePath}`,
+                                  pr.projectPath,
+                                );
+                              }
+                            }}
+                            style={{
+                              display: 'flex',
+                              'align-items': 'center',
+                              gap: '4px',
+                              padding: '3px 4px',
+                              cursor: item.isDirectory ? 'default' : 'pointer',
+                              'border-radius': '4px',
+                              'font-size': sf(12),
+                              color: theme.fg,
+                              opacity: item.isDirectory ? '0.5' : '1',
+                              'white-space': 'nowrap',
+                              overflow: 'hidden',
+                              'text-overflow': 'ellipsis',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!item.isDirectory)
+                                (e.currentTarget as HTMLElement).style.background = theme.bgHover;
+                            }}
+                            onMouseLeave={(e) => {
+                              (e.currentTarget as HTMLElement).style.background = 'transparent';
+                            }}
+                          >
+                            <span
+                              style={{
+                                'flex-shrink': '0',
+                                display: 'flex',
+                                'align-items': 'center',
+                              }}
+                            >
+                              {item.isDirectory ? <FolderIcon /> : <FileIcon />}
+                            </span>
+                            <span
+                              style={{
+                                overflow: 'hidden',
+                                'text-overflow': 'ellipsis',
+                                flex: '1',
+                                'min-width': '0',
+                              }}
+                            >
+                              {item.relativePath}
+                            </span>
+                          </div>
+                        )}
+                      </For>
+                    )}
+                  </For>
+                </div>
+              }
+            >
               <div
                 style={{
                   display: 'flex',
@@ -696,74 +935,39 @@ export function FileExplorer() {
                   'min-height': '0',
                 }}
               >
-                <Show when={searchingFlag()}>
-                  <div style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '4px' }}>
-                    Searching...
-                  </div>
+                <Show when={store.projects.length === 0}>
+                  <span style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '0 2px' }}>
+                    No projects linked yet.
+                  </span>
                 </Show>
-                <Show when={!searchingFlag() && searchResults().length === 0}>
-                  <div style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '4px' }}>
-                    No files found
-                  </div>
-                </Show>
-                <For each={searchResults()}>
-                  {(pr) => (
-                    <For each={pr.results}>
-                      {(item) => (
-                        <div
-                          onClick={() => {
-                            if (!item.isDirectory) {
-                              openFileViewer(
-                                `${pr.projectPath}/${item.relativePath}`,
-                                pr.projectPath,
-                              );
-                            }
-                          }}
-                          style={{
-                            display: 'flex',
-                            'align-items': 'center',
-                            gap: '4px',
-                            padding: '3px 4px',
-                            cursor: item.isDirectory ? 'default' : 'pointer',
-                            'border-radius': '4px',
-                            'font-size': sf(12),
-                            color: theme.fg,
-                            opacity: item.isDirectory ? '0.5' : '1',
-                            'white-space': 'nowrap',
-                            overflow: 'hidden',
-                            'text-overflow': 'ellipsis',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!item.isDirectory)
-                              (e.currentTarget as HTMLElement).style.background = theme.bgHover;
-                          }}
-                          onMouseLeave={(e) => {
-                            (e.currentTarget as HTMLElement).style.background = 'transparent';
-                          }}
-                        >
-                          <span
-                            style={{ 'flex-shrink': '0', display: 'flex', 'align-items': 'center' }}
-                          >
-                            {item.isDirectory ? <FolderIcon /> : <FileIcon />}
-                          </span>
-                          <span
-                            style={{
-                              overflow: 'hidden',
-                              'text-overflow': 'ellipsis',
-                              flex: '1',
-                              'min-width': '0',
-                            }}
-                          >
-                            {item.relativePath}
-                          </span>
-                        </div>
-                      )}
-                    </For>
+                <For each={store.projects}>
+                  {(project) => (
+                    <ProjectFileTree
+                      project={project}
+                      onRemove={(id) => setConfirmRemove(id)}
+                      onEdit={(p) => setEditingProject(p)}
+                    />
                   )}
                 </For>
+                {/* Trailing drop indicator */}
+                <Show
+                  when={dragProjectId() !== null && dropProjectIndex() === store.projects.length}
+                >
+                  <div
+                    style={{
+                      height: '2px',
+                      background: theme.accent,
+                      'border-radius': '1px',
+                      margin: '1px 0',
+                    }}
+                  />
+                </Show>
               </div>
-            }
-          >
+            </Show>
+          </Show>
+
+          {/* === GIT DIFF TAB === */}
+          <Show when={activeTab() === 'gitdiff'}>
             <div
               style={{
                 display: 'flex',
@@ -773,31 +977,141 @@ export function FileExplorer() {
                 'min-height': '0',
               }}
             >
-              <Show when={store.projects.length === 0}>
-                <span style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '0 2px' }}>
-                  No projects linked yet.
-                </span>
+              <Show when={gitLoading()}>
+                <div style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '4px' }}>
+                  Scanning for changes...
+                </div>
               </Show>
-              <For each={store.projects}>
-                {(project) => (
-                  <ProjectFileTree
-                    project={project}
-                    onRemove={(id) => setConfirmRemove(id)}
-                    onEdit={(p) => setEditingProject(p)}
-                  />
-                )}
+              <Show when={!gitLoading() && gitChanges().length === 0}>
+                <div style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '4px' }}>
+                  No changes found
+                </div>
+              </Show>
+              <For each={gitChanges()}>
+                {(repo) => {
+                  const isExpanded = () => expandedRepos()[repo.repoPath] ?? false;
+                  return (
+                    <div>
+                      {/* Repo header */}
+                      <div
+                        onClick={() =>
+                          setExpandedRepos((prev) => ({
+                            ...prev,
+                            [repo.repoPath]: !prev[repo.repoPath],
+                          }))
+                        }
+                        style={{
+                          display: 'flex',
+                          'align-items': 'center',
+                          gap: '4px',
+                          padding: '3px 4px',
+                          cursor: 'pointer',
+                          'border-radius': '4px',
+                          'font-size': sf(13),
+                          'font-weight': '600',
+                          color: theme.fg,
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.currentTarget as HTMLElement).style.background = theme.bgHover;
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLElement).style.background = 'transparent';
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: '14px',
+                            height: '14px',
+                            display: 'flex',
+                            'align-items': 'center',
+                            'justify-content': 'center',
+                            'flex-shrink': '0',
+                            color: theme.fgSubtle,
+                          }}
+                        >
+                          {isExpanded() ? <ChevronDown /> : <ChevronRight />}
+                        </span>
+                        <span
+                          style={{
+                            flex: '1',
+                            overflow: 'hidden',
+                            'text-overflow': 'ellipsis',
+                            'white-space': 'nowrap',
+                          }}
+                        >
+                          {repo.repoName}
+                        </span>
+                        <span
+                          style={{
+                            'font-size': sf(10),
+                            color: theme.fgSubtle,
+                            'font-weight': '400',
+                            'flex-shrink': '0',
+                          }}
+                        >
+                          {repo.files.length}
+                        </span>
+                      </div>
+
+                      {/* Changed files */}
+                      <Show when={isExpanded()}>
+                        <For each={repo.files}>
+                          {(file) => (
+                            <div
+                              onClick={() =>
+                                void handleDiffClick(repo.repoPath, repo.projectPath, file.path)
+                              }
+                              style={{
+                                display: 'flex',
+                                'align-items': 'center',
+                                gap: '6px',
+                                padding: '2px 4px',
+                                'padding-left': '24px',
+                                cursor: 'pointer',
+                                'border-radius': '4px',
+                                'font-size': sf(12),
+                                color: theme.fg,
+                                'white-space': 'nowrap',
+                                overflow: 'hidden',
+                                'text-overflow': 'ellipsis',
+                              }}
+                              onMouseEnter={(e) => {
+                                (e.currentTarget as HTMLElement).style.background = theme.bgHover;
+                              }}
+                              onMouseLeave={(e) => {
+                                (e.currentTarget as HTMLElement).style.background = 'transparent';
+                              }}
+                            >
+                              <span
+                                style={{
+                                  'font-size': sf(10),
+                                  'font-weight': '700',
+                                  color: statusColor(file.status),
+                                  width: '14px',
+                                  'text-align': 'center',
+                                  'flex-shrink': '0',
+                                }}
+                              >
+                                {statusLabel(file.status)}
+                              </span>
+                              <span
+                                style={{
+                                  overflow: 'hidden',
+                                  'text-overflow': 'ellipsis',
+                                  flex: '1',
+                                  'min-width': '0',
+                                }}
+                              >
+                                {file.path}
+                              </span>
+                            </div>
+                          )}
+                        </For>
+                      </Show>
+                    </div>
+                  );
+                }}
               </For>
-              {/* Trailing drop indicator */}
-              <Show when={dragProjectId() !== null && dropProjectIndex() === store.projects.length}>
-                <div
-                  style={{
-                    height: '2px',
-                    background: theme.accent,
-                    'border-radius': '1px',
-                    margin: '1px 0',
-                  }}
-                />
-              </Show>
             </div>
           </Show>
         </Show>

@@ -3,6 +3,7 @@ import { store } from '../store/core';
 import { closeFileViewer } from '../store/store';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
+import { MonacoDiffEditor } from './MonacoDiffEditor';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 
@@ -87,7 +88,9 @@ export function FileViewerPanel() {
     return parts[parts.length - 1] || '';
   };
 
-  // Load file content when fileViewerFile changes
+  const isDiffMode = () => !!file()?.diffMode;
+
+  // Load file content when fileViewerFile changes (skip in diff mode)
   createEffect(() => {
     const f = file();
     if (!f) {
@@ -98,6 +101,13 @@ export function FileViewerPanel() {
         editorInstance.dispose();
         editorInstance = undefined;
       }
+      return;
+    }
+    if (f.diffMode) {
+      // Diff mode — no file loading needed, content comes from diffMode
+      setLoading(false);
+      setContent(null);
+      setDirty(false);
       return;
     }
     setLoading(true);
@@ -249,33 +259,36 @@ export function FileViewerPanel() {
             'white-space': 'nowrap',
           }}
         >
+          {isDiffMode() ? 'Diff: ' : ''}
           {relPath()}
           <Show when={dirty()}>
             <span style={{ color: theme.fgMuted }}> (unsaved)</span>
           </Show>
         </span>
 
-        {/* Save button */}
-        <button
-          onClick={() => {
-            if (dirty()) saveFile();
-          }}
-          style={{
-            background: savedFeedback() ? 'transparent' : dirty() ? theme.accent : 'transparent',
-            border: `1px solid ${savedFeedback() ? theme.success : dirty() ? theme.accent : theme.border}`,
-            'border-radius': '4px',
-            color: savedFeedback() ? theme.success : dirty() ? theme.accentText : theme.fgSubtle,
-            cursor: dirty() ? 'pointer' : 'default',
-            padding: '2px 6px',
-            'font-size': sf(10),
-            'flex-shrink': '0',
-            transition: 'all 0.2s',
-            opacity: !dirty() && !savedFeedback() ? '0.5' : '1',
-          }}
-          title="Save file (Cmd+S)"
-        >
-          {saving() ? 'Saving...' : savedFeedback() ? 'Saved!' : 'Save'}
-        </button>
+        {/* Save button (hidden in diff mode) */}
+        <Show when={!isDiffMode()}>
+          <button
+            onClick={() => {
+              if (dirty()) saveFile();
+            }}
+            style={{
+              background: savedFeedback() ? 'transparent' : dirty() ? theme.accent : 'transparent',
+              border: `1px solid ${savedFeedback() ? theme.success : dirty() ? theme.accent : theme.border}`,
+              'border-radius': '4px',
+              color: savedFeedback() ? theme.success : dirty() ? theme.accentText : theme.fgSubtle,
+              cursor: dirty() ? 'pointer' : 'default',
+              padding: '2px 6px',
+              'font-size': sf(10),
+              'flex-shrink': '0',
+              transition: 'all 0.2s',
+              opacity: !dirty() && !savedFeedback() ? '0.5' : '1',
+            }}
+            title="Save file (Cmd+S)"
+          >
+            {saving() ? 'Saving...' : savedFeedback() ? 'Saved!' : 'Save'}
+          </button>
+        </Show>
 
         {/* Copy path button */}
         <button
@@ -341,45 +354,60 @@ export function FileViewerPanel() {
 
       {/* Content */}
       <div style={{ flex: '1', 'min-height': '0', overflow: 'hidden' }}>
-        <Show when={loading()}>
-          <div
-            style={{
-              display: 'flex',
-              'align-items': 'center',
-              'justify-content': 'center',
-              height: '100%',
-              color: theme.fgMuted,
-              'font-size': sf(13),
-            }}
-          >
-            Loading...
-          </div>
+        {/* Diff mode */}
+        <Show when={isDiffMode() && file()?.diffMode}>
+          {(dm) => (
+            <MonacoDiffEditor
+              oldContent={dm().oldContent}
+              newContent={dm().newContent}
+              language={dm().language}
+              sideBySide={true}
+            />
+          )}
         </Show>
 
-        <Show when={!loading() && content()?.binary}>
-          <div
-            style={{
-              display: 'flex',
-              'align-items': 'center',
-              'justify-content': 'center',
-              height: '100%',
-              color: theme.fgMuted,
-              'font-size': sf(13),
-            }}
-          >
-            Binary file — cannot display
-          </div>
-        </Show>
+        {/* Normal file mode */}
+        <Show when={!isDiffMode()}>
+          <Show when={loading()}>
+            <div
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                'justify-content': 'center',
+                height: '100%',
+                color: theme.fgMuted,
+                'font-size': sf(13),
+              }}
+            >
+              Loading...
+            </div>
+          </Show>
 
-        <Show when={!loading() && content() && !content()?.binary}>
-          <div
-            ref={(el) => {
-              editorContainerRef = el;
-              const c = content();
-              if (c?.content) setupEditor(c);
-            }}
-            style={{ width: '100%', height: '100%' }}
-          />
+          <Show when={!loading() && content()?.binary}>
+            <div
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                'justify-content': 'center',
+                height: '100%',
+                color: theme.fgMuted,
+                'font-size': sf(13),
+              }}
+            >
+              Binary file — cannot display
+            </div>
+          </Show>
+
+          <Show when={!loading() && content() && !content()?.binary}>
+            <div
+              ref={(el) => {
+                editorContainerRef = el;
+                const c = content();
+                if (c?.content) setupEditor(c);
+              }}
+              style={{ width: '100%', height: '100%' }}
+            />
+          </Show>
         </Show>
       </div>
     </div>

@@ -96,6 +96,7 @@ export {
   setDockerAvailable,
   setWindowState,
   openFileViewer,
+  openFileDiff,
   closeFileViewer,
   toggleQuickFileOpen,
 } from './ui';

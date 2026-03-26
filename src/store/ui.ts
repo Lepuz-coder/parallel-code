@@ -127,6 +127,20 @@ export function openFileViewer(filePath: string, projectPath: string): void {
   setStore('fileViewerFile', { filePath, projectPath });
 }
 
+export function openFileDiff(
+  filePath: string,
+  projectPath: string,
+  oldContent: string,
+  newContent: string,
+  language: string,
+): void {
+  setStore('fileViewerFile', {
+    filePath,
+    projectPath,
+    diffMode: { oldContent, newContent, language },
+  });
+}
+
 export function closeFileViewer(): void {
   setStore('fileViewerFile', null);
 }

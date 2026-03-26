@@ -30,6 +30,7 @@ import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
 import { readDirectory, readFileContent, writeFileContent, searchFiles } from './filesystem.js';
+import { findGitRepos, getChangedFiles, getFileDiff } from './git.js';
 import path from 'path';
 import {
   assertString,
@@ -202,6 +203,21 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   // --- Filesystem ---
+  // --- Git ---
+  ipcMain.handle(IPC.FindGitRepos, (_e, args) => {
+    validatePath(args.projectPath, 'projectPath');
+    return findGitRepos(args.projectPath);
+  });
+  ipcMain.handle(IPC.GetChangedFiles, (_e, args) => {
+    validatePath(args.repoPath, 'repoPath');
+    return getChangedFiles(args.repoPath);
+  });
+  ipcMain.handle(IPC.GetFileDiff, (_e, args) => {
+    validatePath(args.repoPath, 'repoPath');
+    assertString(args.filePath, 'filePath');
+    return getFileDiff(args.repoPath, args.filePath);
+  });
+
   ipcMain.handle(IPC.ReadDirectory, (_e, args) => {
     validatePath(args.dirPath, 'dirPath');
     return readDirectory(args.dirPath);

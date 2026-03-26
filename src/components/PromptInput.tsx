@@ -1,5 +1,5 @@
 import { createSignal, createEffect, onMount, onCleanup, untrack } from 'solid-js';
-import { fireAndForget } from '../lib/ipc';
+import { fireAndForget, invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import {
   store,
@@ -306,6 +306,40 @@ export function PromptInput(props: PromptInputProps) {
     return false;
   }
 
+  // --- File drop & attach ---
+
+  function insertPaths(paths: string[]): void {
+    const pathText = paths.join('\n');
+    const current = text();
+    const textarea = textareaRef;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const before = current.slice(0, start);
+      const after = current.slice(end);
+      const sep = before && !before.endsWith('\n') && !before.endsWith(' ') ? ' ' : '';
+      setText(before + sep + pathText + after);
+      // Move cursor after inserted text
+      requestAnimationFrame(() => {
+        const pos = before.length + sep.length + pathText.length;
+        textarea.selectionStart = pos;
+        textarea.selectionEnd = pos;
+      });
+    } else {
+      setText(current + (current ? ' ' : '') + pathText);
+    }
+  }
+
+  async function handleAttachFile(): Promise<void> {
+    const result = await invoke<string | string[] | null>(IPC.DialogOpen, {
+      multiple: true,
+    });
+    if (!result) return;
+    const paths = Array.isArray(result) ? result : [result];
+    insertPaths(paths);
+    textareaRef?.focus();
+  }
+
   let sendAbortController: AbortController | undefined;
 
   async function handleSend(mode: 'manual' | 'auto' = 'manual') {
@@ -391,7 +425,7 @@ export function PromptInput(props: PromptInputProps) {
             background: theme.bgInput,
             border: `1px solid ${theme.border}`,
             'border-radius': '12px',
-            padding: '6px 36px 6px 10px',
+            padding: '6px 36px 6px 36px',
             color: theme.fg,
             'font-size': sf(12),
             'font-family': "'JetBrains Mono', monospace",
@@ -400,6 +434,33 @@ export function PromptInput(props: PromptInputProps) {
             opacity: questionActive() ? '0.5' : '1',
           }}
         />
+        {/* Attach file button */}
+        <button
+          type="button"
+          onClick={() => handleAttachFile()}
+          title="Attach file (inserts file path)"
+          style={{
+            position: 'absolute',
+            left: '6px',
+            bottom: '6px',
+            width: '24px',
+            height: '24px',
+            'border-radius': '50%',
+            border: 'none',
+            background: 'transparent',
+            color: theme.fgSubtle,
+            cursor: 'pointer',
+            display: 'flex',
+            'align-items': 'center',
+            'justify-content': 'center',
+            padding: '0',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M12.07 5.34 7.4 10.01a2.18 2.18 0 0 1-3.08-3.08l5.96-5.96a3.27 3.27 0 1 1 4.62 4.62l-5.97 5.96a4.36 4.36 0 0 1-6.16-6.16l4.67-4.67.71.71-4.67 4.67a3.36 3.36 0 0 0 4.74 4.74l5.97-5.96a2.27 2.27 0 0 0-3.2-3.2L5.02 7.63a1.18 1.18 0 0 0 1.66 1.66l4.67-4.67.72.72Z" />
+          </svg>
+        </button>
+        {/* Send button */}
         <button
           class="prompt-send-btn"
           type="button"
