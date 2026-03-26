@@ -245,7 +245,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                       }
                       command={''}
                       args={['-l']}
-                      cwd={props.task.worktreePath}
+                      cwd={getProject(props.task.projectId)?.path ?? ''}
                       dockerMode={props.task.dockerMode}
                       dockerImage={props.task.dockerImage}
                       initialCommand={initialCommand}

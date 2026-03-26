@@ -1,8 +1,7 @@
 import { createSignal } from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import { store, setStore } from './core';
-import type { WorktreeStatus } from '../ipc/types';
+import { store } from './core';
 
 // --- Trust-specific patterns (subset of QUESTION_PATTERNS) ---
 // These are auto-accepted when autoTrustFolders is enabled.
@@ -576,115 +575,5 @@ export function getTaskDotStatus(taskId: string): TaskDotStatus {
     return a?.status === 'running' && active.has(id);
   });
   if (hasActive) return 'busy';
-
-  const git = store.taskGitStatus[taskId];
-  if (git?.has_committed_changes && !git?.has_uncommitted_changes) return 'ready';
   return 'waiting';
-}
-
-// --- Git status polling ---
-
-async function refreshTaskGitStatus(taskId: string): Promise<void> {
-  const task = store.tasks[taskId];
-  if (!task) return;
-
-  try {
-    const status = await invoke<WorktreeStatus>(IPC.GetWorktreeStatus, {
-      worktreePath: task.worktreePath,
-      baseBranch: task.baseBranch,
-    });
-    setStore('taskGitStatus', taskId, status);
-  } catch {
-    // Worktree may not exist yet or was removed — ignore
-  }
-}
-
-let isRefreshingAll = false;
-let refreshAllStartedAt = 0;
-
-/** Refresh git status for inactive tasks (active task is handled by its own 5s timer).
- *  Limits concurrency to avoid spawning too many parallel git processes. */
-export async function refreshAllTaskGitStatus(): Promise<void> {
-  if (isRefreshingAll && Date.now() - refreshAllStartedAt < 60_000) return;
-  isRefreshingAll = true;
-  refreshAllStartedAt = Date.now();
-  try {
-    const taskIds = store.taskOrder;
-    const active = activeAgents();
-    const currentTaskId = store.activeTaskId;
-    const toRefresh = taskIds.filter((taskId) => {
-      // Active task is covered by the faster refreshActiveTaskGitStatus timer
-      if (taskId === currentTaskId) return false;
-      const task = store.tasks[taskId];
-      if (!task) return false;
-      return !task.agentIds.some((id) => {
-        const a = store.agents[id];
-        return a?.status === 'running' && active.has(id);
-      });
-    });
-
-    // Process in batches of 4 to limit concurrent git processes
-    const BATCH_SIZE = 4;
-    for (let i = 0; i < toRefresh.length; i += BATCH_SIZE) {
-      const batch = toRefresh.slice(i, i + BATCH_SIZE);
-      await Promise.allSettled(batch.map((taskId) => refreshTaskGitStatus(taskId)));
-    }
-  } finally {
-    isRefreshingAll = false;
-  }
-}
-
-/** Refresh git status for the currently active task only. */
-async function refreshActiveTaskGitStatus(): Promise<void> {
-  const taskId = store.activeTaskId;
-  if (!taskId) return;
-  await refreshTaskGitStatus(taskId);
-}
-
-/** Refresh git status for a single task (e.g. after agent exits). */
-export function refreshTaskStatus(taskId: string): void {
-  refreshTaskGitStatus(taskId);
-}
-
-let allTasksTimer: ReturnType<typeof setInterval> | null = null;
-let activeTaskTimer: ReturnType<typeof setInterval> | null = null;
-let lastPollingTaskCount = 0;
-
-function computeAllTasksInterval(): number {
-  const taskCount = store.taskOrder.length;
-  return Math.min(120_000, 30_000 + Math.max(0, taskCount - 3) * 5_000);
-}
-
-export function startTaskStatusPolling(): void {
-  if (allTasksTimer || activeTaskTimer) return;
-  // Active task polls every 5s for responsive UI
-  activeTaskTimer = setInterval(refreshActiveTaskGitStatus, 5_000);
-  // Scale interval: 30s base + 5s per additional task beyond 3
-  lastPollingTaskCount = store.taskOrder.length;
-  allTasksTimer = setInterval(refreshAllTaskGitStatus, computeAllTasksInterval());
-  // Run once immediately
-  refreshActiveTaskGitStatus();
-  refreshAllTaskGitStatus();
-}
-
-/** Call when tasks are added/removed to recalculate the all-tasks polling interval. */
-export function rescheduleTaskStatusPolling(): void {
-  if (!allTasksTimer) return;
-  const currentCount = store.taskOrder.length;
-  if (currentCount === lastPollingTaskCount) return;
-  lastPollingTaskCount = currentCount;
-  clearInterval(allTasksTimer);
-  allTasksTimer = setInterval(refreshAllTaskGitStatus, computeAllTasksInterval());
-}
-
-export function stopTaskStatusPolling(): void {
-  if (allTasksTimer) {
-    clearInterval(allTasksTimer);
-    allTasksTimer = null;
-  }
-  if (activeTaskTimer) {
-    clearInterval(activeTaskTimer);
-    activeTaskTimer = null;
-  }
-  lastPollingTaskCount = 0;
 }

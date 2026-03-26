@@ -7,7 +7,6 @@ export {
   removeProjectWithTasks,
   updateProject,
   getProjectPath,
-  getProjectBranchPrefix,
   pickAndAddProject,
   validateProjectPaths,
   relinkProject,
@@ -28,8 +27,6 @@ export {
   createTask,
   closeTask,
   retryCloseTask,
-  mergeTask,
-  pushTask,
   updateTaskName,
   updateTaskNotes,
   sendPrompt,
@@ -41,11 +38,8 @@ export {
   spawnShellForTask,
   runBookmarkInTask,
   closeShell,
-  hasDirectTask,
   collapseTask,
   uncollapseTask,
-  getGitHubDropDefaults,
-  setNewTaskDropUrl,
   setNewTaskPrefillPrompt,
   setPlanContent,
 } from './tasks';
@@ -90,7 +84,6 @@ export {
   getPanelSize,
   setPanelSizes,
   toggleSidebar,
-  toggleArena,
   setTerminalFont,
   setThemePreset,
   setAutoTrustFolders,
@@ -115,13 +108,10 @@ export {
   isTrustQuestionAutoHandled,
   isAutoTrustSettling,
   isAgentAskingQuestion,
-  startTaskStatusPolling,
-  stopTaskStatusPolling,
-  rescheduleTaskStatusPolling,
 } from './taskStatus';
 export type { TaskDotStatus } from './taskStatus';
 export { showNotification, clearNotification } from './notification';
-export { getCompletedTasksTodayCount, getMergedLineTotals } from './completion';
+export { getCompletedTasksTodayCount } from './completion';
 export {
   createTerminal,
   closeTerminal,

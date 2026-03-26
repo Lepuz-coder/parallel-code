@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, app, BrowserWindow, Notification } from 'electron';
+import { ipcMain, dialog, shell, BrowserWindow, Notification } from 'electron';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { IPC } from './channels.js';
@@ -23,30 +23,6 @@ import {
   readPlanForWorktree,
 } from './plans.js';
 import { startRemoteServer } from '../remote/server.js';
-import {
-  getGitIgnoredDirs,
-  getMainBranch,
-  getCurrentBranch,
-  getChangedFiles,
-  getChangedFilesFromBranch,
-  getAllFileDiffs,
-  getAllFileDiffsFromBranch,
-  getFileDiff,
-  getFileDiffFromBranch,
-  getWorktreeStatus,
-  commitAll,
-  discardUncommitted,
-  checkMergeStatus,
-  mergeTask,
-  getBranchLog,
-  pushTask,
-  rebaseTask,
-  createWorktree,
-  removeWorktree,
-  isGitRepo,
-  getBranches,
-  checkoutBranch,
-} from './git.js';
 import { createTask, deleteTask } from './tasks.js';
 import { listAgents } from './agents.js';
 import { saveAppState, loadAppState } from './persistence.js';
@@ -57,7 +33,6 @@ import path from 'path';
 import {
   assertString,
   assertInt,
-  assertBoolean,
   assertStringArray,
   assertOptionalString,
   assertOptionalBoolean,
@@ -75,12 +50,6 @@ function validateRelativePath(p: unknown, label: string): void {
   if (typeof p !== 'string') throw new Error(`${label} must be a string`);
   if (path.isAbsolute(p)) throw new Error(`${label} must not be absolute`);
   if (p.includes('..')) throw new Error(`${label} must not contain ".."`);
-}
-
-/** Reject branch names that could be misinterpreted as git flags. */
-function validateBranchName(name: unknown, label: string): void {
-  if (typeof name !== 'string' || !name) throw new Error(`${label} must be a non-empty string`);
-  if (name.startsWith('-')) throw new Error(`${label} must not start with "-"`);
 }
 
 /**
@@ -187,159 +156,17 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // --- Task commands ---
   ipcMain.handle(IPC.CreateTask, (_e, args) => {
     assertString(args.name, 'name');
-    validatePath(args.projectRoot, 'projectRoot');
-    assertStringArray(args.symlinkDirs, 'symlinkDirs');
-    assertOptionalString(args.branchPrefix, 'branchPrefix');
-    assertOptionalString(args.baseBranch, 'baseBranch');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    const result = createTask(
-      args.name,
-      args.projectRoot,
-      args.symlinkDirs,
-      args.branchPrefix ?? 'task',
-      baseBranch,
-    );
+    const result = createTask(args.name);
     result.then((r: { id: string }) => taskNames.set(r.id, args.name)).catch(() => {});
     return result;
   });
   ipcMain.handle(IPC.DeleteTask, (_e, args) => {
     assertStringArray(args.agentIds, 'agentIds');
-    validatePath(args.projectRoot, 'projectRoot');
-    validateBranchName(args.branchName, 'branchName');
-    assertBoolean(args.deleteBranch, 'deleteBranch');
     assertOptionalString(args.taskId, 'taskId');
     return deleteTask({
       taskId: args.taskId,
       agentIds: args.agentIds,
-      branchName: args.branchName,
-      deleteBranch: args.deleteBranch,
-      projectRoot: args.projectRoot,
     });
-  });
-
-  // --- Git commands ---
-  ipcMain.handle(IPC.GetChangedFiles, (_e, args) => {
-    validatePath(args.worktreePath, 'worktreePath');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    return getChangedFiles(args.worktreePath, baseBranch);
-  });
-  ipcMain.handle(IPC.GetChangedFilesFromBranch, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    validateBranchName(args.branchName, 'branchName');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    return getChangedFilesFromBranch(args.projectRoot, args.branchName, baseBranch);
-  });
-  ipcMain.handle(IPC.GetAllFileDiffs, (_e, args) => {
-    validatePath(args.worktreePath, 'worktreePath');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    return getAllFileDiffs(args.worktreePath, baseBranch);
-  });
-  ipcMain.handle(IPC.GetAllFileDiffsFromBranch, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    validateBranchName(args.branchName, 'branchName');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    return getAllFileDiffsFromBranch(args.projectRoot, args.branchName, baseBranch);
-  });
-  ipcMain.handle(IPC.GetFileDiff, (_e, args) => {
-    validatePath(args.worktreePath, 'worktreePath');
-    validateRelativePath(args.filePath, 'filePath');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    return getFileDiff(args.worktreePath, args.filePath, baseBranch);
-  });
-  ipcMain.handle(IPC.GetFileDiffFromBranch, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    validateBranchName(args.branchName, 'branchName');
-    validateRelativePath(args.filePath, 'filePath');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    return getFileDiffFromBranch(args.projectRoot, args.branchName, args.filePath, baseBranch);
-  });
-  ipcMain.handle(IPC.GetGitignoredDirs, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    return getGitIgnoredDirs(args.projectRoot);
-  });
-  ipcMain.handle(IPC.GetWorktreeStatus, (_e, args) => {
-    validatePath(args.worktreePath, 'worktreePath');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    return getWorktreeStatus(args.worktreePath, baseBranch);
-  });
-  ipcMain.handle(IPC.CommitAll, (_e, args) => {
-    validatePath(args.worktreePath, 'worktreePath');
-    assertString(args.message, 'message');
-    return commitAll(args.worktreePath, args.message);
-  });
-  ipcMain.handle(IPC.DiscardUncommitted, (_e, args) => {
-    validatePath(args.worktreePath, 'worktreePath');
-    return discardUncommitted(args.worktreePath);
-  });
-  ipcMain.handle(IPC.CheckMergeStatus, (_e, args) => {
-    validatePath(args.worktreePath, 'worktreePath');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    return checkMergeStatus(args.worktreePath, baseBranch);
-  });
-  ipcMain.handle(IPC.MergeTask, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    validateBranchName(args.branchName, 'branchName');
-    assertBoolean(args.squash, 'squash');
-    assertOptionalString(args.message, 'message');
-    assertOptionalBoolean(args.cleanup, 'cleanup');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    return mergeTask(
-      args.projectRoot,
-      args.branchName,
-      args.squash,
-      args.message ?? null,
-      args.cleanup ?? false,
-      baseBranch,
-    );
-  });
-  ipcMain.handle(IPC.GetBranchLog, (_e, args) => {
-    validatePath(args.worktreePath, 'worktreePath');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    return getBranchLog(args.worktreePath, baseBranch);
-  });
-  ipcMain.handle(IPC.PushTask, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    validateBranchName(args.branchName, 'branchName');
-    assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
-    return pushTask(win, args.projectRoot, args.branchName, args.onOutput.__CHANNEL_ID__);
-  });
-  ipcMain.handle(IPC.RebaseTask, (_e, args) => {
-    validatePath(args.worktreePath, 'worktreePath');
-    const baseBranch = args.baseBranch || undefined;
-    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
-    return rebaseTask(args.worktreePath, baseBranch);
-  });
-  ipcMain.handle(IPC.GetMainBranch, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    return getMainBranch(args.projectRoot);
-  });
-  ipcMain.handle(IPC.GetCurrentBranch, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    return getCurrentBranch(args.projectRoot);
-  });
-  ipcMain.handle(IPC.CheckoutBranch, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    validateBranchName(args.branchName, 'branchName');
-    return checkoutBranch(args.projectRoot, args.branchName);
-  });
-  ipcMain.handle(IPC.CheckIsGitRepo, (_e, args) => {
-    validatePath(args.path, 'path');
-    return isGitRepo(args.path);
-  });
-  ipcMain.handle(IPC.GetBranches, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    return getBranches(args.projectRoot);
   });
 
   // --- Persistence ---
@@ -366,52 +193,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const json = loadAppState();
     if (json) syncTaskNamesFromJson(json);
     return json;
-  });
-
-  // --- Arena persistence ---
-  ipcMain.handle(IPC.SaveArenaData, (_e, args) => {
-    assertString(args.filename, 'filename');
-    assertString(args.json, 'json');
-    const filePath = path.join(app.getPath('userData'), args.filename);
-    const basename = path.basename(filePath);
-    if (basename !== args.filename) throw new Error('Invalid filename');
-    if (!basename.startsWith('arena-') || !basename.endsWith('.json'))
-      throw new Error('Arena files must be arena-*.json');
-    const tmpPath = filePath + '.tmp';
-    fs.writeFileSync(tmpPath, args.json, 'utf-8');
-    fs.renameSync(tmpPath, filePath);
-  });
-
-  ipcMain.handle(IPC.LoadArenaData, (_e, args) => {
-    assertString(args.filename, 'filename');
-    const filePath = path.join(app.getPath('userData'), args.filename);
-    const basename = path.basename(filePath);
-    if (basename !== args.filename) throw new Error('Invalid filename');
-    if (!basename.startsWith('arena-') || !basename.endsWith('.json'))
-      throw new Error('Arena files must be arena-*.json');
-    try {
-      return fs.readFileSync(filePath, 'utf-8');
-    } catch {
-      return null;
-    }
-  });
-
-  ipcMain.handle(IPC.CreateArenaWorktree, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    validateBranchName(args.branchName, 'branchName');
-    return createWorktree(
-      args.projectRoot,
-      args.branchName,
-      args.symlinkDirs ?? [],
-      undefined,
-      true,
-    );
-  });
-
-  ipcMain.handle(IPC.RemoveArenaWorktree, (_e, args) => {
-    validatePath(args.projectRoot, 'projectRoot');
-    validateBranchName(args.branchName, 'branchName');
-    return removeWorktree(args.projectRoot, args.branchName, true);
   });
 
   ipcMain.handle(IPC.CheckPathExists, (_e, args) => {

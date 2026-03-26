@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show, For, onCleanup } from 'solid-js';
+import { createSignal, createEffect, Show, onCleanup } from 'solid-js';
 import { Dialog } from './Dialog';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
@@ -7,27 +7,14 @@ import {
   createTask,
   toggleNewTaskDialog,
   loadAgents,
-  getProject,
-  getProjectPath,
-  getProjectBranchPrefix,
-  updateProject,
-  hasDirectTask,
-  getGitHubDropDefaults,
   setPrefillPrompt,
   setDockerAvailable,
   setDockerImage,
-  showNotification,
 } from '../store/store';
-import type { GitIsolationMode } from '../store/types';
-import { toBranchName, sanitizeBranchPrefix } from '../lib/branch-name';
-import { SegmentedButtons } from './SegmentedButtons';
 import { cleanTaskName } from '../lib/clean-task-name';
-import { extractGitHubUrl } from '../lib/github-url';
 import { theme, sectionLabelStyle, bannerStyle } from '../lib/theme';
 import { AgentSelector } from './AgentSelector';
-import { BranchPrefixField } from './BranchPrefixField';
 import { ProjectSelect } from './ProjectSelect';
-import { SymlinkDirPicker } from './SymlinkDirPicker';
 import type { AgentDef } from '../ipc/types';
 
 interface NewTaskDialogProps {
@@ -42,19 +29,12 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   const [selectedProjectId, setSelectedProjectId] = createSignal<string | null>(null);
   const [error, setError] = createSignal('');
   const [loading, setLoading] = createSignal(false);
-  const [ignoredDirs, setIgnoredDirs] = createSignal<string[]>([]);
-  const [selectedDirs, setSelectedDirs] = createSignal<Set<string>>(new Set());
-  const [gitIsolation, setGitIsolation] = createSignal<GitIsolationMode>('worktree');
-  const [baseBranch, setBaseBranch] = createSignal('');
-  const [branches, setBranches] = createSignal<string[]>([]);
-  const [branchesLoading, setBranchesLoading] = createSignal(false);
   const [skipPermissions, setSkipPermissions] = createSignal(false);
   const [dockerMode, setDockerMode] = createSignal(false);
-  const [dockerImageReady, setDockerImageReady] = createSignal<boolean | null>(null); // null = unknown
+  const [dockerImageReady, setDockerImageReady] = createSignal<boolean | null>(null);
   const [dockerBuilding, setDockerBuilding] = createSignal(false);
   const [dockerBuildOutput, setDockerBuildOutput] = createSignal('');
   const [dockerBuildError, setDockerBuildError] = createSignal('');
-  const [branchPrefix, setBranchPrefix] = createSignal('');
   let promptRef!: HTMLTextAreaElement;
   let formRef!: HTMLFormElement;
   let buildOutputRef!: HTMLPreElement;
@@ -107,16 +87,13 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     focusables[nextIdx].focus();
   }
 
-  // Initialize state each time the dialog opens
   createEffect(() => {
     if (!props.open) return;
 
-    // Reset signals for a fresh dialog
     setPrompt('');
     setName('');
     setError('');
     setLoading(false);
-    setGitIsolation('worktree');
     setSkipPermissions(false);
     setDockerMode(false);
     setDockerImageReady(null);
@@ -125,7 +102,6 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     setDockerBuildError('');
 
     void (async () => {
-      // Check Docker availability in background
       invoke<boolean>(IPC.CheckDockerAvailable).then(
         (available) => setDockerAvailable(available),
         () => setDockerAvailable(false),
@@ -138,27 +114,18 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
         : null;
       setSelectedAgent(lastAgent ?? store.availableAgents[0] ?? null);
 
-      // Pre-fill from drop data if present
-      const dropUrl = store.newTaskDropUrl;
       const fallbackProjectId = store.lastProjectId ?? store.projects[0]?.id ?? null;
-      const defaults = dropUrl ? getGitHubDropDefaults(dropUrl) : null;
+      setSelectedProjectId(fallbackProjectId);
 
-      if (dropUrl) setPrompt(`review ${dropUrl}`);
-      if (defaults) setName(defaults.name);
-      setSelectedProjectId(defaults?.projectId ?? fallbackProjectId);
-
-      // Pre-fill from arena comparison prompt
       const prefill = store.newTaskPrefillPrompt;
       if (prefill) {
         setPrompt(prefill.prompt);
-        setName('Compare arena results');
         if (prefill.projectId) setSelectedProjectId(prefill.projectId);
       }
 
       promptRef?.focus();
     })();
 
-    // Capture-phase handler for Alt+Arrow to navigate form sections / within fields
     const handleAltArrow = (e: KeyboardEvent) => {
       if (!e.altKey) return;
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -166,7 +133,6 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
         e.stopImmediatePropagation();
         navigateDialogFields(e.key === 'ArrowDown' ? 'down' : 'up');
       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        // Preserve native word-jump (Alt+Arrow) in text inputs
         const tag = (document.activeElement as HTMLElement)?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
         e.preventDefault();
@@ -181,116 +147,12 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     });
   });
 
-  // Fetch gitignored dirs when project changes
-  createEffect(() => {
-    const pid = selectedProjectId();
-    const path = pid ? getProjectPath(pid) : undefined;
-    let cancelled = false;
-
-    if (!path) {
-      setIgnoredDirs([]);
-      setSelectedDirs(new Set<string>());
-      return;
-    }
-
-    void (async () => {
-      try {
-        const dirs = await invoke<string[]>(IPC.GetGitignoredDirs, { projectRoot: path });
-        if (cancelled) return;
-        setIgnoredDirs(dirs);
-        setSelectedDirs(new Set(dirs)); // all checked by default
-      } catch {
-        if (cancelled) return;
-        setIgnoredDirs([]);
-        setSelectedDirs(new Set<string>());
-      }
-    })();
-
-    onCleanup(() => {
-      cancelled = true;
-    });
-  });
-
-  // Sync branch prefix when project changes
-  createEffect(() => {
-    const pid = selectedProjectId();
-    setBranchPrefix(pid ? getProjectBranchPrefix(pid) : 'task');
-  });
-
-  // Fetch branches on every dialog open and on project change (D-02 merged effect)
-  createEffect(() => {
-    // D-02, D-03: All reactive reads synchronous before any async code
-    const open = props.open;
-    const pid = selectedProjectId();
-    const projectPath = pid ? getProjectPath(pid) : undefined;
-    let cancelled = false;
-
-    if (!open || !projectPath) {
-      setBranches([]);
-      setBaseBranch('');
-      setBranchesLoading(false);
-      // D-03: onCleanup registered synchronously even on early return
-      onCleanup(() => {
-        cancelled = true;
-      });
-      return;
-    }
-
-    // D-01: Clear list and show spinner immediately on every open
-    setBranches([]);
-    setBranchesLoading(true);
-
-    const doFetch = async () => {
-      const [branchList, mainBranch] = await Promise.all([
-        invoke<string[]>(IPC.GetBranches, { projectRoot: projectPath }),
-        invoke<string>(IPC.GetMainBranch, { projectRoot: projectPath }),
-      ]);
-      if (cancelled) return;
-      // Set both in same synchronous sequence — avoids SolidJS #2241 select value race
-      setBranches(branchList);
-      const proj = pid ? getProject(pid) : undefined;
-      setBaseBranch(proj?.defaultBaseBranch ?? mainBranch);
-      setBranchesLoading(false);
-    };
-
-    void doFetch().catch(async () => {
-      // D-04: Retry once silently
-      if (cancelled) return;
-      try {
-        await doFetch();
-      } catch (err) {
-        if (cancelled) return;
-        setBranchesLoading(false);
-        showNotification(`Failed to load branches: ${String(err)}`);
-      }
-    });
-
-    // D-03: onCleanup MUST be synchronous in effect body, not inside the IIFE
-    onCleanup(() => {
-      cancelled = true;
-    });
-  });
-
-  // Set isolation mode from project defaults, enforce worktree if a direct task already exists
-  createEffect(() => {
-    const pid = selectedProjectId();
-    if (!pid) return;
-    if (hasDirectTask(pid)) {
-      setGitIsolation('worktree');
-      return;
-    }
-    const proj = getProject(pid);
-    setGitIsolation(proj?.defaultGitIsolation ?? 'worktree');
-  });
-
-  // Auto-enable Docker when skip-permissions is turned on and Docker is available
   createEffect(() => {
     if (skipPermissions() && store.dockerAvailable) {
       setDockerMode(true);
     }
   });
 
-  // Check if the default Docker image exists when Docker mode is enabled (debounced)
   let checkTimer: ReturnType<typeof setTimeout>;
   createEffect(() => {
     if (dockerMode() && store.dockerAvailable) {
@@ -307,9 +169,8 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     }
   });
 
-  // Auto-scroll build output to bottom
   createEffect(() => {
-    dockerBuildOutput(); // track
+    dockerBuildOutput();
     if (buildOutputRef) {
       buildOutputRef.scrollTop = buildOutputRef.scrollHeight;
     }
@@ -322,7 +183,6 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
 
     const channelId = `docker-build-${Date.now()}`;
 
-    // Listen for build output
     const cleanup = window.electron.ipcRenderer.on(`channel:${channelId}`, (...args: unknown[]) => {
       setDockerBuildOutput((prev) => prev + String(args[0] ?? ''));
     });
@@ -350,26 +210,9 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     if (n) return n;
     const p = prompt().trim();
     if (!p) return '';
-    // Use first line, clean filler phrases, truncate at ~40 chars on word boundary
     const firstLine = cleanTaskName(p.split('\n')[0]);
     if (firstLine.length <= 40) return firstLine;
     return firstLine.slice(0, 40).replace(/\s+\S*$/, '') || firstLine.slice(0, 40);
-  };
-
-  const branchPreview = () => {
-    const n = effectiveName();
-    const prefix = sanitizeBranchPrefix(branchPrefix());
-    return n ? `${prefix}/${toBranchName(n)}` : '';
-  };
-
-  const selectedProjectPath = () => {
-    const pid = selectedProjectId();
-    return pid ? getProjectPath(pid) : undefined;
-  };
-
-  const directDisabled = () => {
-    const pid = selectedProjectId();
-    return pid ? hasDirectTask(pid) : false;
   };
 
   const agentSupportsSkipPermissions = () => {
@@ -403,53 +246,17 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     setError('');
 
     const p = prompt().trim() || undefined;
-    const isFromDrop = !!store.newTaskDropUrl;
-    const prefix = sanitizeBranchPrefix(branchPrefix());
-    const ghUrl = (p ? extractGitHubUrl(p) : null) ?? store.newTaskDropUrl ?? undefined;
     try {
-      // Persist the branch prefix to the project for next time
-      updateProject(projectId, { branchPrefix: prefix });
-
-      if (gitIsolation() === 'direct') {
-        const projectPath = getProjectPath(projectId);
-        if (!projectPath) {
-          setError('Project path not found');
-          return;
-        }
-        const currentBranch = await invoke<string>(IPC.GetCurrentBranch, {
-          projectRoot: projectPath,
-        });
-        if (currentBranch !== baseBranch()) {
-          try {
-            await invoke(IPC.CheckoutBranch, {
-              projectRoot: projectPath,
-              branchName: baseBranch(),
-            });
-          } catch (err) {
-            setError(
-              `Cannot switch to "${baseBranch()}": ${err instanceof Error ? err.message : String(err)}`,
-            );
-            return;
-          }
-        }
-      }
-
       const taskId = await createTask({
         name: n,
         agentDef: agent,
         projectId,
-        gitIsolation: gitIsolation(),
-        baseBranch: baseBranch(),
-        symlinkDirs: gitIsolation() === 'worktree' ? [...selectedDirs()] : undefined,
-        branchPrefixOverride: gitIsolation() === 'worktree' ? prefix : undefined,
-        initialPrompt: isFromDrop ? undefined : p,
-        githubUrl: ghUrl,
+        initialPrompt: p,
         skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
         dockerMode: dockerMode() || undefined,
         dockerImage: dockerMode() ? store.dockerImage : undefined,
       });
-      // Drop flow: prefill prompt without auto-sending
-      if (isFromDrop && p) {
+      if (p) {
         setPrefillPrompt(taskId, p);
       }
       toggleNewTaskDialog(false);
@@ -490,9 +297,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           <p
             style={{ margin: '0', 'font-size': '12px', color: theme.fgMuted, 'line-height': '1.5' }}
           >
-            {gitIsolation() === 'direct'
-              ? 'The AI agent will work directly on your main branch in the project root.'
-              : 'Creates a git branch and worktree so the AI agent can work in isolation without affecting your main branch.'}
+            Create a new terminal session for an AI agent to work on a task.
           </p>
         </div>
 
@@ -567,123 +372,13 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
               outline: 'none',
             }}
           />
-          <Show when={gitIsolation() === 'direct' && selectedProjectPath()}>
-            <div
-              style={{
-                'font-size': '11px',
-                'font-family': "'JetBrains Mono', monospace",
-                color: theme.fgSubtle,
-                display: 'flex',
-                'flex-direction': 'column',
-                gap: '2px',
-                padding: '4px 2px 0',
-              }}
-            >
-              <span style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  style={{ 'flex-shrink': '0' }}
-                >
-                  <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6.25 7.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 7.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 0h5.5a2.5 2.5 0 0 0 2.5-2.5v-.5a.75.75 0 0 0-1.5 0v.5a1 1 0 0 1-1 1H5a3.25 3.25 0 1 0 0 6.5h6.25a.75.75 0 0 0 0-1.5H5a1.75 1.75 0 1 1 0-3.5Z" />
-                </svg>
-                main branch (detected on create)
-              </span>
-              <span style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  style={{ 'flex-shrink': '0' }}
-                >
-                  <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z" />
-                </svg>
-                {selectedProjectPath()}
-              </span>
-            </div>
-          </Show>
         </div>
-
-        <Show when={gitIsolation() === 'worktree'}>
-          <BranchPrefixField
-            branchPrefix={branchPrefix()}
-            branchPreview={branchPreview()}
-            projectPath={selectedProjectPath()}
-            onPrefixChange={setBranchPrefix}
-          />
-        </Show>
 
         <AgentSelector
           agents={store.availableAgents}
           selectedAgent={selectedAgent()}
           onSelect={setSelectedAgent}
         />
-
-        {/* Isolation mode selector */}
-        <div
-          data-nav-field="git-isolation"
-          style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
-        >
-          <label style={sectionLabelStyle}>Git Isolation</label>
-          <SegmentedButtons
-            options={[
-              { value: 'worktree', label: 'Worktree' },
-              { value: 'direct', label: 'Direct', disabled: directDisabled() },
-            ]}
-            value={gitIsolation()}
-            onChange={setGitIsolation}
-          />
-          <Show when={directDisabled()}>
-            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
-              A direct-mode task already exists for this project
-            </span>
-          </Show>
-          <Show when={gitIsolation() === 'direct'}>
-            <div style={{ ...bannerStyle(theme.warning), 'font-size': '12px' }}>
-              Changes will be made directly on the selected branch without worktree isolation.
-            </div>
-          </Show>
-        </div>
-
-        {/* Branch picker */}
-        <div
-          data-nav-field="base-branch"
-          style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
-        >
-          <label style={sectionLabelStyle}>
-            {gitIsolation() === 'worktree' ? 'Base branch' : 'Branch'}
-            <Show when={branchesLoading()}>
-              {' '}
-              <span
-                class="inline-spinner"
-                aria-hidden="true"
-                style={{ 'vertical-align': 'middle' }}
-              />
-            </Show>
-          </label>
-          <select
-            class="input-field"
-            value={baseBranch()}
-            onChange={(e) => setBaseBranch(e.currentTarget.value)}
-            disabled={branchesLoading()}
-            style={{
-              background: theme.bgInput,
-              border: `1px solid ${theme.border}`,
-              'border-radius': '8px',
-              padding: '10px 14px',
-              color: theme.fg,
-              'font-size': '13px',
-              'font-family': "'JetBrains Mono', monospace",
-              outline: 'none',
-              opacity: branchesLoading() ? '0.5' : '1',
-            }}
-          >
-            <For each={branches()}>{(b) => <option value={b}>{b}</option>}</For>
-          </select>
-        </div>
 
         {/* Skip permissions toggle */}
         <Show when={agentSupportsSkipPermissions()}>
@@ -872,19 +567,6 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
               </Show>
             </Show>
           </div>
-        </Show>
-
-        <Show when={ignoredDirs().length > 0 && gitIsolation() === 'worktree'}>
-          <SymlinkDirPicker
-            dirs={ignoredDirs()}
-            selectedDirs={selectedDirs()}
-            onToggle={(dir) => {
-              const next = new Set(selectedDirs());
-              if (next.has(dir)) next.delete(dir);
-              else next.add(dir);
-              setSelectedDirs(next);
-            }}
-          />
         </Show>
 
         <Show when={error()}>

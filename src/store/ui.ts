@@ -106,10 +106,6 @@ export function setDockerAvailable(available: boolean): void {
   setStore('dockerAvailable', available);
 }
 
-export function toggleArena(show?: boolean): void {
-  setStore('showArena', show ?? !store.showArena);
-}
-
 export function setWindowState(windowState: PersistedWindowState): void {
   const current = store.windowState;
   if (

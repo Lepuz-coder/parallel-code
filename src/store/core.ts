@@ -21,7 +21,6 @@ export const [store, setStore] = createStore<AppStore>({
   fontScales: {},
   panelSizes: {},
   globalScale: 1,
-  taskGitStatus: {},
   focusedPanel: {},
   sidebarFocused: false,
   sidebarFocusedProjectId: null,
@@ -34,8 +33,6 @@ export const [store, setStore] = createStore<AppStore>({
   notification: null,
   completedTaskDate: getLocalDateKey(),
   completedTaskCount: 0,
-  mergedLinesAdded: 0,
-  mergedLinesRemoved: 0,
   terminalFont: DEFAULT_TERMINAL_FONT,
   themePreset: 'minimal',
   windowState: null,
@@ -46,7 +43,6 @@ export const [store, setStore] = createStore<AppStore>({
   editorCommand: '',
   dockerImage: 'parallel-code-agent:latest',
   dockerAvailable: false,
-  newTaskDropUrl: null,
   newTaskPrefillPrompt: null,
   missingProjectIds: {},
   remoteAccess: {
@@ -58,7 +54,6 @@ export const [store, setStore] = createStore<AppStore>({
     tailscaleUrl: null,
     connectedClients: 0,
   },
-  showArena: false,
 });
 
 /** Remove fontScales, panelSizes, focusedPanel, and taskOrder entries for a given ID.

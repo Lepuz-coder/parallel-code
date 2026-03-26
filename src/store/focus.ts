@@ -299,9 +299,7 @@ export function navigateColumn(direction: 'left' | 'right'): void {
   }
 }
 
-export function setPendingAction(
-  action: { type: 'close' | 'merge' | 'push'; taskId: string } | null,
-): void {
+export function setPendingAction(action: { type: 'close'; taskId: string } | null): void {
   setStore('pendingAction', action);
 }
 

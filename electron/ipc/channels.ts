@@ -14,28 +14,6 @@ export enum IPC {
   CreateTask = 'create_task',
   DeleteTask = 'delete_task',
 
-  // Git
-  GetChangedFiles = 'get_changed_files',
-  GetChangedFilesFromBranch = 'get_changed_files_from_branch',
-  GetAllFileDiffs = 'get_all_file_diffs',
-  GetAllFileDiffsFromBranch = 'get_all_file_diffs_from_branch',
-  GetFileDiff = 'get_file_diff',
-  GetFileDiffFromBranch = 'get_file_diff_from_branch',
-  GetGitignoredDirs = 'get_gitignored_dirs',
-  GetWorktreeStatus = 'get_worktree_status',
-  CheckMergeStatus = 'check_merge_status',
-  MergeTask = 'merge_task',
-  GetBranchLog = 'get_branch_log',
-  PushTask = 'push_task',
-  RebaseTask = 'rebase_task',
-  GetMainBranch = 'get_main_branch',
-  GetCurrentBranch = 'get_current_branch',
-  CheckoutBranch = 'checkout_branch',
-  GetBranches = 'get_branches',
-  CheckIsGitRepo = 'check_is_git_repo',
-  CommitAll = 'commit_all',
-  DiscardUncommitted = 'discard_uncommitted',
-
   // Persistence
   SaveAppState = 'save_app_state',
   LoadAppState = 'load_app_state',
@@ -69,11 +47,7 @@ export enum IPC {
   ShellOpenFile = '__shell_open_file',
   ShellOpenInEditor = '__shell_open_in_editor',
 
-  // Arena
-  SaveArenaData = 'save_arena_data',
-  LoadArenaData = 'load_arena_data',
-  CreateArenaWorktree = 'create_arena_worktree',
-  RemoveArenaWorktree = 'remove_arena_worktree',
+  // Filesystem
   CheckPathExists = 'check_path_exists',
 
   // Remote access

@@ -44,8 +44,6 @@ export async function saveState(): Promise<void> {
     globalScale: store.globalScale,
     completedTaskDate: store.completedTaskDate,
     completedTaskCount: store.completedTaskCount,
-    mergedLinesAdded: store.mergedLinesAdded,
-    mergedLinesRemoved: store.mergedLinesRemoved,
     terminalFont: store.terminalFont,
     themePreset: store.themePreset,
     windowState: store.windowState ? { ...store.windowState } : undefined,
@@ -68,18 +66,13 @@ export async function saveState(): Promise<void> {
       id: task.id,
       name: task.name,
       projectId: task.projectId,
-      branchName: task.branchName,
-      worktreePath: task.worktreePath,
       notes: task.notes,
       lastPrompt: task.lastPrompt,
       shellCount: task.shellAgentIds.length,
       agentDef: firstAgent?.def ?? null,
-      gitIsolation: task.gitIsolation,
-      baseBranch: task.baseBranch,
       skipPermissions: task.skipPermissions,
       dockerMode: task.dockerMode,
       dockerImage: task.dockerImage,
-      githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
     };
@@ -95,18 +88,13 @@ export async function saveState(): Promise<void> {
       id: task.id,
       name: task.name,
       projectId: task.projectId,
-      branchName: task.branchName,
-      worktreePath: task.worktreePath,
       notes: task.notes,
       lastPrompt: task.lastPrompt,
       shellCount: task.shellAgentIds.length,
       agentDef: firstAgent?.def ?? task.savedAgentDef ?? null,
-      gitIsolation: task.gitIsolation,
-      baseBranch: task.baseBranch,
       skipPermissions: task.skipPermissions,
       dockerMode: task.dockerMode,
       dockerImage: task.dockerImage,
-      githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
       collapsed: true,
@@ -183,8 +171,6 @@ interface LegacyPersistedState {
   globalScale?: unknown;
   completedTaskDate?: unknown;
   completedTaskCount?: unknown;
-  mergedLinesAdded?: unknown;
-  mergedLinesRemoved?: unknown;
   terminalFont?: unknown;
   themePreset?: unknown;
   windowState?: unknown;
@@ -227,15 +213,8 @@ export async function loadState(): Promise<void> {
   const lastAgentId: string | null = raw.lastAgentId ?? null;
 
   // Assign colors to projects that don't have one (backward compat)
-  // Also migrate defaultDirectMode -> defaultGitIsolation
   for (const p of projects) {
     if (!p.color) p.color = randomPastelColor();
-    // Migrate defaultDirectMode -> defaultGitIsolation
-    const legacy = p as Project & { defaultDirectMode?: boolean };
-    if (legacy.defaultDirectMode !== undefined && p.defaultGitIsolation === undefined) {
-      p.defaultGitIsolation = legacy.defaultDirectMode ? 'direct' : undefined;
-      delete (legacy as unknown as Record<string, unknown>).defaultDirectMode;
-    }
   }
 
   if (projects.length === 0 && raw.projectRoot) {
@@ -282,16 +261,6 @@ export async function loadState(): Promise<void> {
         s.completedTaskDate = today;
         s.completedTaskCount = 0;
       }
-      const mergedLinesAddedRaw = raw.mergedLinesAdded;
-      const mergedLinesRemovedRaw = raw.mergedLinesRemoved;
-      s.mergedLinesAdded =
-        typeof mergedLinesAddedRaw === 'number' && Number.isFinite(mergedLinesAddedRaw)
-          ? Math.max(0, Math.floor(mergedLinesAddedRaw))
-          : 0;
-      s.mergedLinesRemoved =
-        typeof mergedLinesRemovedRaw === 'number' && Number.isFinite(mergedLinesRemovedRaw)
-          ? Math.max(0, Math.floor(mergedLinesRemovedRaw))
-          : 0;
       s.terminalFont =
         typeof raw.terminalFont === 'string' && raw.terminalFont.trim()
           ? raw.terminalFont
@@ -355,23 +324,17 @@ export async function loadState(): Promise<void> {
           shellAgentIds.push(crypto.randomUUID());
         }
 
-        const legacy = pt as PersistedTask & { directMode?: boolean };
         const task: Task = {
           id: pt.id,
           name: pt.name,
           projectId: pt.projectId ?? '',
-          branchName: pt.branchName,
-          worktreePath: pt.worktreePath,
           agentIds: agentDef ? [agentId] : [],
           shellAgentIds,
           notes: pt.notes,
           lastPrompt: pt.lastPrompt,
-          gitIsolation: legacy.gitIsolation ?? (legacy.directMode ? 'direct' : 'worktree'),
-          baseBranch: legacy.baseBranch || undefined,
           skipPermissions: pt.skipPermissions === true,
           dockerMode: pt.dockerMode === true ? true : undefined,
           dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
-          githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
         };
@@ -416,24 +379,17 @@ export async function loadState(): Promise<void> {
         const agentDef = pt.agentDef;
         enrichAgentDef(agentDef, s.availableAgents);
 
-        const legacyCollapsed = pt as PersistedTask & { directMode?: boolean };
         const task: Task = {
           id: pt.id,
           name: pt.name,
           projectId: pt.projectId ?? '',
-          branchName: pt.branchName,
-          worktreePath: pt.worktreePath,
           agentIds: [],
           shellAgentIds: [],
           notes: pt.notes,
           lastPrompt: pt.lastPrompt,
-          gitIsolation:
-            legacyCollapsed.gitIsolation ?? (legacyCollapsed.directMode ? 'direct' : 'worktree'),
-          baseBranch: legacyCollapsed.baseBranch || undefined,
           skipPermissions: pt.skipPermissions === true,
           dockerMode: pt.dockerMode === true ? true : undefined,
           dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
-          githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
           collapsed: true,

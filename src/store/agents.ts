@@ -4,7 +4,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
 import type { AgentDef } from '../ipc/types';
 import type { Agent } from './types';
-import { refreshTaskStatus, clearAgentActivity, markAgentSpawned } from './taskStatus';
+import { clearAgentActivity, markAgentSpawned } from './taskStatus';
 
 export async function loadAgents(): Promise<void> {
   const defaults = await invoke<AgentDef[]>(IPC.ListAgents);
@@ -59,7 +59,6 @@ export function markAgentExited(
   );
   if (agent) {
     clearAgentActivity(agentId);
-    refreshTaskStatus(agent.taskId);
   }
 }
 

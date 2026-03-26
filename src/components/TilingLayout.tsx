@@ -115,9 +115,7 @@ export function TilingLayout() {
                             const task = store.tasks[panelId];
                             if (task) {
                               const msg =
-                                task.gitIsolation === 'direct'
-                                  ? 'Close this task? Running agents and shells will be stopped.'
-                                  : 'Close this task? The worktree and branch will be deleted.';
+                                'Close this task? Running agents and shells will be stopped.';
                               if (window.confirm(msg)) closeTask(panelId);
                             } else if (store.terminals[panelId]) {
                               closeTerminal(panelId);

@@ -706,25 +706,6 @@ export function Sidebar() {
   );
 }
 
-function DirectModeBadge(props: { branchName: string }) {
-  return (
-    <span
-      style={{
-        'font-size': sf(10),
-        'font-weight': '600',
-        padding: '1px 5px',
-        'border-radius': '3px',
-        background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
-        color: theme.warning,
-        'flex-shrink': '0',
-        'line-height': '1.5',
-      }}
-    >
-      {props.branchName}
-    </span>
-  );
-}
-
 function CollapsedTaskRow(props: { taskId: string }) {
   const task = () => store.tasks[props.taskId];
   return (
@@ -765,9 +746,6 @@ function CollapsedTaskRow(props: { taskId: string }) {
           }}
         >
           <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" />
-          <Show when={t().gitIsolation === 'direct'}>
-            <DirectModeBadge branchName={t().branchName} />
-          </Show>
           <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis' }}>{t().name}</span>
         </div>
       )}
@@ -821,22 +799,6 @@ function TaskRow(props: TaskRowProps) {
             }}
           >
             <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" />
-            <Show when={t().gitIsolation === 'direct'}>
-              <span
-                style={{
-                  'font-size': sf(10),
-                  'font-weight': '600',
-                  padding: '1px 5px',
-                  'border-radius': '3px',
-                  background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
-                  color: theme.warning,
-                  'flex-shrink': '0',
-                  'line-height': '1.5',
-                }}
-              >
-                {t().branchName}
-              </span>
-            </Show>
             <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis' }}>{t().name}</span>
           </div>
         </>

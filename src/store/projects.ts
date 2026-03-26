@@ -1,11 +1,10 @@
 import { produce } from 'solid-js/store';
-import { confirm, openDialog } from '../lib/dialog';
+import { openDialog } from '../lib/dialog';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
 import { closeTask } from './tasks';
 import type { Project } from './types';
-import { sanitizeBranchPrefix } from '../lib/branch-name';
 
 export const PASTEL_HUES = [0, 30, 60, 120, 180, 210, 260, 300, 330];
 
@@ -32,7 +31,6 @@ export function addProject(name: string, path: string): string {
 }
 
 export function removeProject(projectId: string): void {
-  // Guard: skip removal if any tasks still reference this project
   const allTaskIds = [...store.taskOrder, ...store.collapsedTaskOrder];
   const hasLinkedTasks = allTaskIds.some((tid) => store.tasks[tid]?.projectId === projectId);
   if (hasLinkedTasks) {
@@ -55,18 +53,7 @@ export function removeProject(projectId: string): void {
 
 export function updateProject(
   projectId: string,
-  updates: Partial<
-    Pick<
-      Project,
-      | 'name'
-      | 'color'
-      | 'branchPrefix'
-      | 'deleteBranchOnClose'
-      | 'defaultGitIsolation'
-      | 'defaultBaseBranch'
-      | 'terminalBookmarks'
-    >
-  >,
+  updates: Partial<Pick<Project, 'name' | 'color' | 'terminalBookmarks'>>,
 ): void {
   setStore(
     produce((s) => {
@@ -74,23 +61,10 @@ export function updateProject(
       if (idx === -1) return;
       if (updates.name !== undefined) s.projects[idx].name = updates.name;
       if (updates.color !== undefined) s.projects[idx].color = updates.color;
-      if (updates.branchPrefix !== undefined)
-        s.projects[idx].branchPrefix = sanitizeBranchPrefix(updates.branchPrefix);
-      if (updates.deleteBranchOnClose !== undefined)
-        s.projects[idx].deleteBranchOnClose = updates.deleteBranchOnClose;
-      if (updates.defaultGitIsolation !== undefined)
-        s.projects[idx].defaultGitIsolation = updates.defaultGitIsolation;
-      if (updates.defaultBaseBranch !== undefined)
-        s.projects[idx].defaultBaseBranch = updates.defaultBaseBranch;
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
     }),
   );
-}
-
-export function getProjectBranchPrefix(projectId: string): string {
-  const raw = store.projects.find((p) => p.id === projectId)?.branchPrefix ?? 'task';
-  return sanitizeBranchPrefix(raw);
 }
 
 export function getProjectPath(projectId: string): string | undefined {
@@ -98,48 +72,29 @@ export function getProjectPath(projectId: string): string | undefined {
 }
 
 export async function removeProjectWithTasks(projectId: string): Promise<void> {
-  // Collect task IDs belonging to this project BEFORE removing anything
   const taskIds = store.taskOrder.filter((tid) => store.tasks[tid]?.projectId === projectId);
   const collapsedTaskIds = store.collapsedTaskOrder.filter(
     (tid) => store.tasks[tid]?.projectId === projectId,
   );
 
-  // Close tasks sequentially to avoid concurrent git operations on the same repo.
-  // Must happen before removeProject() since closeTask needs the project path.
   for (const tid of taskIds) {
-    // closeTask handles and stores its own errors, so this should not throw.
     await closeTask(tid);
   }
   for (const tid of collapsedTaskIds) {
     await closeTask(tid);
   }
 
-  // If any tasks failed to close, keep the project so users can retry.
   const allTaskIds = [...taskIds, ...collapsedTaskIds];
   const hasRemainingTasks = allTaskIds.some((tid) => store.tasks[tid]?.projectId === projectId);
   if (hasRemainingTasks) return;
 
-  // Now remove the project itself
   removeProject(projectId);
-}
-
-/** Returns true if the path is not a git repo root (and shows a warning dialog). */
-async function rejectNonGitFolder(dirPath: string): Promise<boolean> {
-  const isGit = await invoke<boolean>(IPC.CheckIsGitRepo, { path: dirPath });
-  if (isGit) return false;
-  await confirm(
-    'Parallel Code requires each project to be a git repository. It uses branches and worktrees to let AI agents work in isolation.\n\nTo initialize git, run "git init" in your project folder, then try again.',
-    { title: 'Not a Git Repository', kind: 'warning', okLabel: 'OK' },
-  );
-  return true;
 }
 
 export async function pickAndAddProject(): Promise<string | null> {
   const selected = await openDialog({ directory: true, multiple: false });
   if (!selected) return null;
   const path = selected as string;
-
-  if (await rejectNonGitFolder(path)) return null;
 
   const segments = path.split('/');
   const name = segments[segments.length - 1] || path;
@@ -165,8 +120,6 @@ export async function relinkProject(projectId: string): Promise<boolean> {
   const selected = await openDialog({ directory: true, multiple: false });
   if (!selected) return false;
   const newPath = selected as string;
-
-  if (await rejectNonGitFolder(newPath)) return false;
 
   setStore(
     produce((s) => {

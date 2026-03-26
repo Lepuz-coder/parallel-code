@@ -1,7 +1,5 @@
-import type { AgentDef, WorktreeStatus } from '../ipc/types';
+import type { AgentDef } from '../ipc/types';
 import type { LookPreset } from '../lib/look';
-
-export type GitIsolationMode = 'worktree' | 'direct';
 
 export interface TerminalBookmark {
   id: string;
@@ -13,10 +11,6 @@ export interface Project {
   name: string;
   path: string;
   color: string;
-  branchPrefix?: string; // default "task" if unset
-  deleteBranchOnClose?: boolean; // default true if unset
-  defaultGitIsolation?: GitIsolationMode;
-  defaultBaseBranch?: string;
   terminalBookmarks?: TerminalBookmark[];
 }
 
@@ -36,23 +30,18 @@ export interface Task {
   id: string;
   name: string;
   projectId: string;
-  branchName: string;
-  worktreePath: string;
   agentIds: string[];
   shellAgentIds: string[];
   notes: string;
   lastPrompt: string;
-  initialPrompt?: string; // auto-sends when agent is ready
+  initialPrompt?: string;
   savedInitialPrompt?: string;
-  prefillPrompt?: string; // fills prompt input without sending
+  prefillPrompt?: string;
   closingStatus?: 'closing' | 'removing' | 'error';
   closingError?: string;
-  gitIsolation: GitIsolationMode;
-  baseBranch?: string;
   skipPermissions?: boolean;
   dockerMode?: boolean;
   dockerImage?: string;
-  githubUrl?: string;
   collapsed?: boolean;
   savedAgentDef?: AgentDef;
   planContent?: string;
@@ -70,18 +59,13 @@ export interface PersistedTask {
   id: string;
   name: string;
   projectId: string;
-  branchName: string;
-  worktreePath: string;
   notes: string;
   lastPrompt: string;
   shellCount: number;
   agentDef: AgentDef | null;
-  gitIsolation: GitIsolationMode;
-  baseBranch?: string;
   skipPermissions?: boolean;
   dockerMode?: boolean;
   dockerImage?: string;
-  githubUrl?: string;
   savedInitialPrompt?: string;
   collapsed?: boolean;
   planFileName?: string;
@@ -115,8 +99,6 @@ export interface PersistedState {
   globalScale?: number;
   completedTaskDate?: string;
   completedTaskCount?: number;
-  mergedLinesAdded?: number;
-  mergedLinesRemoved?: number;
   terminalFont?: string;
   themePreset?: LookPreset;
   windowState?: PersistedWindowState;
@@ -134,7 +116,7 @@ export interface PersistedState {
 export type PanelId = string;
 
 export interface PendingAction {
-  type: 'close' | 'merge' | 'push';
+  type: 'close';
   taskId: string;
 }
 
@@ -166,7 +148,6 @@ export interface AppStore {
   fontScales: Record<string, number>;
   panelSizes: Record<string, number>;
   globalScale: number;
-  taskGitStatus: Record<string, WorktreeStatus>;
   focusedPanel: Record<string, PanelId>;
   sidebarFocused: boolean;
   sidebarFocusedProjectId: string | null;
@@ -179,8 +160,6 @@ export interface AppStore {
   notification: string | null;
   completedTaskDate: string;
   completedTaskCount: number;
-  mergedLinesAdded: number;
-  mergedLinesRemoved: number;
   terminalFont: string;
   themePreset: LookPreset;
   windowState: PersistedWindowState | null;
@@ -191,9 +170,7 @@ export interface AppStore {
   editorCommand: string;
   dockerImage: string;
   dockerAvailable: boolean;
-  newTaskDropUrl: string | null;
   newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   missingProjectIds: Record<string, true>;
   remoteAccess: RemoteAccess;
-  showArena: boolean;
 }

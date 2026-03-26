@@ -56,7 +56,6 @@ export function toggleNewTaskDialog(show?: boolean): void {
     return;
   }
   if (!shouldShow) {
-    setStore('newTaskDropUrl', null);
     setStore('newTaskPrefillPrompt', null);
   }
   setStore('showNewTaskDialog', shouldShow);
