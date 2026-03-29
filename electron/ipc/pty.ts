@@ -395,7 +395,11 @@ export function killAgent(agentId: string): void {
     if (session.containerName) {
       stopDockerContainer(session.containerName);
     }
-    session.proc.kill();
+    try {
+      session.proc.kill();
+    } catch {
+      // Process may have already exited; ignore native errors from double-kill
+    }
   }
 }
 
@@ -417,7 +421,11 @@ export function killAllAgents(): void {
         // Intentionally ignore: container may not exist or may have already stopped.
       }
     }
-    session.proc.kill();
+    try {
+      session.proc.kill();
+    } catch {
+      // Process may have already exited
+    }
   }
   // Let onExit handlers clean up sessions individually
 }

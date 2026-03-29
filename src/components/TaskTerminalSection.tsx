@@ -1,4 +1,4 @@
-import { Show, For, createSignal, createEffect, onCleanup } from 'solid-js';
+import { Show, For, createSignal, createEffect, onCleanup, batch } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import {
   store,
@@ -46,6 +46,10 @@ export function TaskTerminalSection(props: TaskTerminalSectionProps) {
     Record<string, { exitCode: number | null; signal: string | null }>
   >({});
 
+  // Suppression signals to prevent sync effect races
+  const [suppressSync, setSuppressSync] = createSignal(false);
+  const [closingShells, setClosingShells] = createSignal<Set<string>>(new Set());
+
   // Drag state
   const [dragShellId, setDragShellId] = createSignal<string | null>(null);
   const [dragGhostPos, setDragGhostPos] = createSignal<{ x: number; y: number } | null>(null);
@@ -77,24 +81,27 @@ export function TaskTerminalSection(props: TaskTerminalSectionProps) {
 
   createEffect(() => {
     const shells = props.task.shellAgentIds;
-    if (shells.length === 0) {
+    const closing = closingShells();
+    const suppressed = suppressSync();
+
+    if (shells.length === 0 && closing.size === 0) {
       setGroups([]);
       setCollapsed(true);
       setFocusedGroupId(null);
       return;
     }
-    setCollapsed(false);
+    if (shells.length > 0) setCollapsed(false);
 
     const known = allGroupShellIds();
-    const newShells = shells.filter((s) => !known.has(s));
+    const newShells = shells.filter((s) => !known.has(s) && !closing.has(s));
     const shellSet = new Set(shells);
 
-    // Single produce call: add new shells + remove closed shells + clean up empty groups
+    // Single produce call: remove closed shells + optionally add new shells
     setGroups(
       produce((gs) => {
         // 1) Remove closed shells from all groups
         for (let gi = gs.length - 1; gi >= 0; gi--) {
-          gs[gi].shellIds = gs[gi].shellIds.filter((s) => shellSet.has(s));
+          gs[gi].shellIds = gs[gi].shellIds.filter((s) => shellSet.has(s) || closing.has(s));
           if (gs[gi].shellIds.length === 0) {
             gs.splice(gi, 1);
           } else if (!gs[gi].shellIds.includes(gs[gi].activeShellId)) {
@@ -102,8 +109,8 @@ export function TaskTerminalSection(props: TaskTerminalSectionProps) {
           }
         }
 
-        // 2) Add new shells to focused group or create first group
-        if (newShells.length > 0) {
+        // 2) Add new shells — only if sync is not suppressed (split handles its own assignment)
+        if (newShells.length > 0 && !suppressed) {
           const focusedIdx = gs.findIndex((g) => g.id === focusedGroupId());
           const targetIdx = focusedIdx >= 0 ? focusedIdx : gs.length > 0 ? 0 : -1;
 
@@ -136,7 +143,7 @@ export function TaskTerminalSection(props: TaskTerminalSectionProps) {
   createEffect(() => {
     const id = props.task.id;
     const bmCount = projectBookmarks().length;
-    const toolbarCount = 2 + bmCount;
+    const toolbarCount = 1 + bmCount;
     if (shellToolbarIdx() >= toolbarCount) {
       setShellToolbarIdx(toolbarCount - 1);
     }
@@ -156,42 +163,41 @@ export function TaskTerminalSection(props: TaskTerminalSectionProps) {
 
   // --- Actions ---
 
-  function handleSpawnShell(): void {
-    spawnShellForTask(props.task.id);
-  }
-
   function handleSpawnSplit(): void {
-    // Pre-create the group BEFORE spawning, so the sync effect
-    // won't auto-assign the new shell to the wrong group.
     const gid = crypto.randomUUID();
-    const newId = spawnShellForTask(props.task.id);
-    if (!newId) return;
 
-    // The effect may have already auto-added newId to an existing group.
-    // Fix it: remove from wherever it landed and place into the new group.
-    setGroups(
-      produce((gs) => {
-        for (const g of gs) {
-          const idx = g.shellIds.indexOf(newId);
-          if (idx !== -1) {
-            g.shellIds.splice(idx, 1);
-            if (g.activeShellId === newId && g.shellIds.length > 0) {
-              g.activeShellId = g.shellIds[g.shellIds.length - 1];
-            }
-          }
-        }
-        // Remove empty groups
-        for (let i = gs.length - 1; i >= 0; i--) {
-          if (gs[i].shellIds.length === 0) gs.splice(i, 1);
-        }
-        gs.push({ id: gid, shellIds: [newId], activeShellId: newId });
-      }),
-    );
-    setFocusedGroupId(gid);
+    // Suppress sync effect so it won't auto-assign the new shell to an existing group
+    setSuppressSync(true);
+    const newId = spawnShellForTask(props.task.id);
+    if (!newId) {
+      setSuppressSync(false);
+      return;
+    }
+
+    // Batch the group update and suppression reset so the effect sees them atomically —
+    // otherwise setSuppressSync(false) triggers the effect before the group update,
+    // and the effect auto-assigns the shell to the wrong group.
+    batch(() => {
+      setGroups(
+        produce((gs) => {
+          gs.push({ id: gid, shellIds: [newId], activeShellId: newId });
+        }),
+      );
+      setFocusedGroupId(gid);
+      setSuppressSync(false);
+    });
   }
 
   function handleCloseShell(shellId: string): void {
-    // Immediately remove from groups (don't wait for async closeShell to update shellAgentIds)
+    // Mark as closing so the sync effect won't re-add it as "new"
+    setClosingShells((prev) => {
+      const next = new Set(prev);
+      next.add(shellId);
+      return next;
+    });
+
+    // Immediately remove from groups
+    let nextFocusShellId: string | null = null;
     setGroups(
       produce((gs) => {
         for (let gi = gs.length - 1; gi >= 0; gi--) {
@@ -200,15 +206,45 @@ export function TaskTerminalSection(props: TaskTerminalSectionProps) {
             gs[gi].shellIds.splice(idx, 1);
             if (gs[gi].shellIds.length === 0) {
               gs.splice(gi, 1);
-            } else if (gs[gi].activeShellId === shellId) {
-              gs[gi].activeShellId = gs[gi].shellIds[Math.min(idx, gs[gi].shellIds.length - 1)];
+            } else {
+              if (gs[gi].activeShellId === shellId) {
+                gs[gi].activeShellId = gs[gi].shellIds[Math.min(idx, gs[gi].shellIds.length - 1)];
+              }
+              nextFocusShellId = gs[gi].activeShellId;
             }
             break;
           }
         }
       }),
     );
-    closeShell(props.task.id, shellId);
+
+    // Validate focusedGroupId after removal
+    if (!groups.find((g) => g.id === focusedGroupId()) && groups.length > 0) {
+      setFocusedGroupId(groups[0].id);
+    }
+
+    // Handle focus locally
+    if (nextFocusShellId) {
+      const idx = props.task.shellAgentIds.indexOf(nextFocusShellId);
+      if (idx >= 0) setTaskFocusedPanel(props.task.id, `shell:${idx}`);
+    } else if (groups.length > 0) {
+      // Focus first available shell in remaining groups
+      const firstGroup = groups[0];
+      const sid = firstGroup.activeShellId;
+      const idx = props.task.shellAgentIds.indexOf(sid);
+      if (idx >= 0) setTaskFocusedPanel(props.task.id, `shell:${idx}`);
+    } else {
+      setTaskFocusedPanel(props.task.id, 'shell-toolbar:0');
+    }
+
+    // Async kill + remove from global store (skipFocus since we handle it locally)
+    closeShell(props.task.id, shellId, true).finally(() => {
+      setClosingShells((prev) => {
+        const next = new Set(prev);
+        next.delete(shellId);
+        return next;
+      });
+    });
   }
 
   function handleTabClick(groupId: string, shellId: string): void {
@@ -615,7 +651,7 @@ export function TaskTerminalSection(props: TaskTerminalSectionProps) {
           onBlur={() => setShellToolbarFocused(false)}
           onKeyDown={(e) => {
             if (e.altKey) return;
-            const toolbarCount = 2 + projectBookmarks().length;
+            const toolbarCount = 1 + projectBookmarks().length;
             if (e.key === 'ArrowRight') {
               e.preventDefault();
               const next = Math.min(toolbarCount - 1, shellToolbarIdx() + 1);
@@ -629,10 +665,9 @@ export function TaskTerminalSection(props: TaskTerminalSectionProps) {
             } else if (e.key === 'Enter') {
               e.preventDefault();
               const idx = shellToolbarIdx();
-              if (idx === 0) handleSpawnShell();
-              else if (idx === 1) handleSpawnSplit();
+              if (idx === 0) handleSpawnSplit();
               else {
-                const bm = projectBookmarks()[idx - 2];
+                const bm = projectBookmarks()[idx - 1];
                 if (bm) runBookmarkInTask(props.task.id, bm.command);
               }
             }
@@ -700,36 +735,12 @@ export function TaskTerminalSection(props: TaskTerminalSectionProps) {
               'flex-shrink': '0',
             }}
           >
-            {/* Split button */}
-            <button
-              class="icon-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSpawnSplit();
-              }}
-              tabIndex={-1}
-              title="Split terminal (new pane)"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color:
-                  shellToolbarIdx() === 1 && shellToolbarFocused() ? theme.accent : theme.fgSubtle,
-                cursor: 'pointer',
-                padding: '4px',
-                display: 'flex',
-                'align-items': 'center',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M7.25 1H2.75A1.75 1.75 0 0 0 1 2.75v10.5c0 .966.784 1.75 1.75 1.75h4.5V1Zm1.5 14h4.5A1.75 1.75 0 0 0 15 13.25V2.75A1.75 1.75 0 0 0 13.25 1h-4.5v14Z" />
-              </svg>
-            </button>
             {/* New terminal button */}
             <button
               class="icon-btn"
               onClick={(e) => {
                 e.stopPropagation();
-                handleSpawnShell();
+                handleSpawnSplit();
               }}
               tabIndex={-1}
               title={`New terminal (${mod}+Shift+T)`}
@@ -762,7 +773,7 @@ export function TaskTerminalSection(props: TaskTerminalSectionProps) {
                   style={{
                     background: 'transparent',
                     border:
-                      shellToolbarIdx() === i() + 2 && shellToolbarFocused()
+                      shellToolbarIdx() === i() + 1 && shellToolbarFocused()
                         ? `1px solid ${theme.accent}`
                         : '1px solid transparent',
                     color: theme.fgMuted,

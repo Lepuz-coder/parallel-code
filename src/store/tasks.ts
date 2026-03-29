@@ -281,7 +281,11 @@ export function runBookmarkInTask(taskId: string, command: string): void {
   spawnShellForTask(taskId, command);
 }
 
-export async function closeShell(taskId: string, shellId: string): Promise<void> {
+export async function closeShell(
+  taskId: string,
+  shellId: string,
+  skipFocus = false,
+): Promise<void> {
   const closedIndex = store.tasks[taskId]?.shellAgentIds.indexOf(shellId) ?? -1;
 
   await invoke(IPC.KillAgent, { agentId: shellId }).catch(() => {});
@@ -295,7 +299,7 @@ export async function closeShell(taskId: string, shellId: string): Promise<void>
     }),
   );
 
-  if (closedIndex >= 0) {
+  if (!skipFocus && closedIndex >= 0) {
     const remaining = store.tasks[taskId]?.shellAgentIds.length ?? 0;
     if (remaining === 0) {
       setTaskFocusedPanel(taskId, 'shell-toolbar:0');

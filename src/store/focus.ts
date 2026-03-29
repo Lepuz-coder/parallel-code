@@ -49,7 +49,7 @@ function buildGrid(panelId: string): string[][] {
   if (task) {
     const bookmarkCount =
       store.projects.find((p) => p.id === task.projectId)?.terminalBookmarks?.length ?? 0;
-    const toolbarCols = Array.from({ length: 2 + bookmarkCount }, (_, i) => `shell-toolbar:${i}`);
+    const toolbarCols = Array.from({ length: 1 + bookmarkCount }, (_, i) => `shell-toolbar:${i}`);
     const grid: string[][] = [
       ['title'],
       ['notes', 'changed-files'],
